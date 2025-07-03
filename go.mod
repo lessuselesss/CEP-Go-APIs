@@ -1,3 +1,3 @@
-module circular_enterprise_apis
+module github.com/lessuselesss/CEP-Go-APIs
 
 go 1.24.4
