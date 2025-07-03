@@ -47,5 +47,6 @@ func hexToString(hexStr string) string {
 	if err != nil {
 		return ""
 	}
-	return string(bytes)
+	// Strip null bytes to match the reference implementation
+	return strings.ReplaceAll(string(bytes), "\x00", "")
 }
