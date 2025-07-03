@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"strings"
 	"time"
-
-	"github.com/lessuselesss/CEP-Go-APIs/pkg/circular_enterprise_apis"
 )
 
 // PadNumber adds a leading zero to numbers less than 10.
@@ -21,11 +19,11 @@ func padNumber(num int) string {
 func GetFormattedTimestamp() string {
 	now := time.Now().UTC()
 	year := now.Year()
-	month := PadNumber(int(now.Month()))
-	day := PadNumber(now.Day())
-	hours := PadNumber(now.Hour())
-	minutes := PadNumber(now.Minute())
-	seconds := PadNumber(now.Second())
+	month := padNumber(int(now.Month()))
+	day := padNumber(now.Day())
+	hours := padNumber(now.Hour())
+	minutes := padNumber(now.Minute())
+	seconds := padNumber(now.Second())
 	return fmt.Sprintf("%d:%s:%s-%s:%s:%s", year, month, day, hours, minutes, seconds)
 }
 
@@ -44,14 +42,10 @@ func stringToHex(str string) string {
 
 // HexToString converts a hexadecimal string back to its original string form.
 func hexToString(hexStr string) string {
-	cleanedHex := HexFix(hexStr)
+	cleanedHex := hexFix(hexStr)
 	bytes, err := hex.DecodeString(cleanedHex)
 	if err != nil {
 		return ""
 	}
 	return string(bytes)
 }
-
-// Removed: const LIB_VERSION = "1.0.13"
-
-// Now you can use circular_enterprise_apis.LibVersion wherever needed.
