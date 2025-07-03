@@ -1,15 +1,45 @@
 package account
 
-// /*
-//  *    Open an account retrieving all the account info
-//  *    address : account address
-//  */
-//     Open(address) {
-//         if (!address || typeof address !== 'string') {
-//             throw new Error("Invalid address format");
-//         }
-//         this.address = address;
-//     }
+import "errors"
+
+// CEPAccount holds the data for a Circular Enterprise Protocol account.
+type CEPAccount struct {
+	Address     string
+	PublicKey   string
+	Info        interface{}
+	CodeVersion string
+	LastError   string
+	NAGURL      string
+	NetworkNode string
+	Blockchain  string
+	LatestTxID  string
+	Nonce       int
+	Data        map[string]interface{}
+	IntervalSec int
+}
+
+// NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
+func NewCEPAccount() *CEPAccount {
+	return &CEPAccount{
+		CodeVersion: "1.0.13",
+		NAGURL:      "https://nag.circularlabs.io/NAG.php?cep=",
+		Blockchain:  "0x8a20baa40c45dc5055aeb26197c203e576ef389d9acb171bd62da11dc5ad72b2",
+		Nonce:       0,
+		Data:        make(map[string]interface{}),
+		IntervalSec: 2,
+	}
+}
+
+// Open sets the account address. This is a prerequisite for many other
+// account operations. It takes the account address as a string and
+// returns an error if the address is invalid.
+func (a *CEPAccount) Open(address string) error {
+	if address == "" {
+		return errors.New("Invalid address format")
+	}
+	a.Address = address
+	return nil
+}
 
 // /*
 //  * Returns the account data in JSON format and updates the Nonce field
