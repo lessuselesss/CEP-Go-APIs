@@ -1,2 +1,2 @@
-package circular_enterprise_protocol_api
+package circular_enterprise_apis
 
