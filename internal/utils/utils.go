@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 	"time"
-)
 
-const LIB_VERSION = "1.0.13"
+	"github.com/lessuselesss/CEP-Go-APIs/pkg/circular_enterprise_apis"
+)
 
 // PadNumber adds a leading zero to numbers less than 10.
 func padNumber(num int) string {
@@ -52,3 +52,6 @@ func hexToString(hexStr string) string {
 	return string(bytes)
 }
 
+// Removed: const LIB_VERSION = "1.0.13"
+
+// Now you can use circular_enterprise_apis.LibVersion wherever needed.
