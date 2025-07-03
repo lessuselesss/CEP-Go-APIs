@@ -1,51 +1,57 @@
 package certificate
 
-// /*
-//  *    insert application data into the certificate
-//  *    data : data content
-//  */
-//     SetData(data)
-//     {
-//          this.data = stringToHex(data);
-//     }
+import (
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+)
 
-// /*
-//  *    extracts application data from the certificate
-//  */
-//     GetData()
-//     {
-//          return hexToString(this.data);
-//     }
+// Certificate represents a CIRCULAR certificate.
+type Certificate struct {
+	Data          string `json:"data"`
+	PreviousTxID  string `json:"previousTxID"`
+	PreviousBlock string `json:"previousBlock"`
+	Version       string `json:"version"`
+}
 
-// /*
-//  *    returns the certificate in JSON format
-//  */
-//     GetJSONCertificate(){
-//         let certificate = {
-//             "data": this.data,
-//             "previousTxID": this.previousTxID,
-//             "previousBlock": this.previousBlock,
-//             "version": this.codeVersion
-//         };
-//         return JSON.stringify(certificate);
-//     }
+// SetData inserts application data into the certificate after converting it to a hexadecimal string.
+// The `data` parameter is the string data to be stored.
+func (c *Certificate) SetData(data string) {
+	c.Data = hex.EncodeToString([]byte(data))
+}
 
-// /*
-//  *    extracts certificate size
-//  *    FIX: This function now correctly calculates the byte size of the certificate,
-//  *    which is crucial when it contains multi-byte Unicode characters.
-//  */
-//     GetCertificateSize() {
-//         let certificate = {
-//             "data": this.data,
-//             "previousTxID": this.previousTxID,
-//             "previousBlock": this.previousBlock,
-//             "version": this.codeVersion
-//         };
-//         const jsonString = JSON.stringify(certificate);
-//         // Use Buffer.byteLength with 'utf8' to get the actual byte count,
-//         // as string.length would give an incorrect result for multi-byte characters.
-//         return Buffer.byteLength(jsonString, 'utf8');
-//     }
+// GetData decodes the hexadecimal data from the certificate into a string.
+// It returns the decoded string and an error if the data is not a valid hexadecimal format.
+func (c *Certificate) GetData() (string, error) {
+	decodedData, err := hex.DecodeString(c.Data)
+	if err != nil {
+		return "", fmt.Errorf("failed to decode certificate data: %w", err)
+	}
+	return string(decodedData), nil
+}
 
-// }
+// GetJSONCertificate serializes the certificate into a JSON string.
+// It returns the JSON string and an error if the serialization fails.
+func (c *Certificate) GetJSONCertificate() (string, error) {
+	// The json.Marshal function converts the struct into a JSON byte slice.
+	jsonBytes, err := json.Marshal(c)
+	if err != nil {
+		// Using fmt.Errorf to wrap the original error with more context.
+		return "", fmt.Errorf("failed to marshal certificate to JSON: %w", err)
+	}
+	// Convert the byte slice to a string for the return value.
+	return string(jsonBytes), nil
+}
+
+// GetCertificateSize calculates the size of the JSON-serialized certificate in bytes.
+// It returns the size and an error if the serialization fails.
+func (c *Certificate) GetCertificateSize() (int, error) {
+	// The json.Marshal function converts the struct into a JSON byte slice.
+	jsonBytes, err := json.Marshal(c)
+	if err != nil {
+		// Using fmt.Errorf to wrap the original error with more context.
+		return 0, fmt.Errorf("failed to marshal certificate to JSON: %w", err)
+	}
+	// The length of the byte slice is the size of the certificate in bytes.
+	return len(jsonBytes), nil
+}
