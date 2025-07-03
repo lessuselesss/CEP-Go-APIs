@@ -1,6 +1,12 @@
 package account
 
-import "errors"
+import (
+	"bytes"
+	"encoding/json"
+	"errors"
+	"fmt"
+	"net/http"
+)
 
 // CEPAccount holds the data for a Circular Enterprise Protocol account.
 type CEPAccount struct {
@@ -16,6 +22,13 @@ type CEPAccount struct {
 	Nonce       int
 	Data        map[string]interface{}
 	IntervalSec int
+}
+
+// nagResponse is the expected JSON response structure from the NAG server.
+type nagResponse struct {
+	S  int         `json:"s"`  // Status
+	R  AccountInfo `json:"r"`  // Result
+	NN string      `json:"nn"` // Network Node
 }
 
 // NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
@@ -39,6 +52,65 @@ func (a *CEPAccount) Open(address string) error {
 	}
 	a.Address = address
 	return nil
+}
+
+// UpdateAccount fetches the latest account information from the blockchain
+// via the NAG (Network Access Gateway). It updates the account's public key,
+// nonce, and other network-related details.
+func (a *Account) UpdateAccount() (bool, error) {
+	if a.Address == "" {
+		return false, errors.New("Account is not open")
+	}
+
+	// Prepare the request payload
+	requestData := struct {
+		Blockchain string `json:"Blockchain"`
+		Address    string `json:"Address"`
+		Version    string `json:"Version"`
+	}{
+		Blockchain: utils.HexFix(a.Blockchain),
+		Address:    utils.HexFix(a.Address),
+		Version:    a.CodeVersion,
+	}
+
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return false, fmt.Errorf("failed to marshal request data: %w", err)
+	}
+
+	// Construct the full URL for the API endpoint
+	url := a.NAG_URL + "Circular_GetWalletNonce_" + a.NETWORK_NODE
+
+	// Make the HTTP POST request
+	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return false, fmt.Errorf("http post request failed: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return false, fmt.Errorf("network request failed with status: %s", resp.Status)
+	}
+
+	// Decode the JSON response
+	var responseData struct {
+		Result   int `json:"Result"`
+		Response struct {
+			Nonce int `json:"Nonce"`
+		} `json:"Response"`
+	}
+
+	if err := json.NewDecoder(resp.Body).Decode(&responseData); err != nil {
+		return false, fmt.Errorf("failed to decode response body: %w", err)
+	}
+
+	// Check for a successful result and update the nonce
+	if responseData.Result == 200 {
+		a.Nonce = responseData.Response.Nonce + 1
+		return true, nil
+	}
+
+	return false, errors.New("failed to update account, invalid response from server")
 }
 
 // /*
