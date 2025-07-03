@@ -1,4 +1,10 @@
 package circular_enterprise_apis
+
+import (
+	"github.com/lessuselesss/CEP-Go-APIs/pkg/account"
+	"github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
+)
+
 const (
 	// These constants are shared across the library.
 	LibVersion   = "1.0.13"
@@ -18,5 +24,5 @@ func (c *Client) NewAccount() *account.Account {
 }
 
 func (c *Client) NewCertificate() *certificate.Certificate {
-    return certificate.NewCertificate(LibVersion)
+	return certificate.NewCertificate(LibVersion)
 }
