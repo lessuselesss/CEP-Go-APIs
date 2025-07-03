@@ -1,5 +1,4 @@
-package circular_enterprise_protocol_api // Or whatever you name your root package
-
+package circular_enterprise_apis
 const (
 	// These constants are shared across the library.
 	LibVersion   = "1.0.13"
