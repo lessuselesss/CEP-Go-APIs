@@ -12,6 +12,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+
+	"github.com/lessuselesss/CEP-Go-APIs/internal/utils"
+	. "github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
 )
 
 // CEPAccount holds the data for a Circular Enterprise Protocol account.
@@ -28,6 +31,8 @@ type CEPAccount struct {
 	Nonce       int
 	Data        map[string]interface{}
 	IntervalSec int
+	NetworkURL  string
+	PrivateKey  *ecdsa.PrivateKey
 }
 
 // NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
@@ -56,7 +61,7 @@ func (a *CEPAccount) Open(address string) error {
 // UpdateAccount fetches the latest account information from the blockchain
 // via the NAG (Network Access Gateway). It updates the account's public key,
 // nonce, and other network-related details.
-func (a *Account) UpdateAccount() (bool, error) {
+func (a *CEPAccount) UpdateAccount() (bool, error) {
 	if a.Address == "" {
 		return false, errors.New("Account is not open")
 	}
@@ -78,7 +83,7 @@ func (a *Account) UpdateAccount() (bool, error) {
 	}
 
 	// Construct the full URL for the API endpoint
-	url := a.NAG_URL + "Circular_GetWalletNonce_" + a.NETWORK_NODE
+	url := a.NAGURL + "Circular_GetWalletNonce_" + a.NetworkNode
 
 	// Make the HTTP POST request
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
@@ -150,7 +155,7 @@ func (a *CEPAccount) SetNetwork(network string) error {
 	// If the request was successful, update the account's NAG_URL.
 	// Otherwise, return an error with the message from the provider.
 	if result.Status == "success" && result.URL != "" {
-		a.NAG_URL = result.URL
+		a.NAGURL = result.URL
 	} else {
 		// The 'message' field in the JSON response provides context for the failure.
 		return fmt.Errorf("failed to set network: %s", result.Message)
@@ -166,9 +171,8 @@ func (a *CEPAccount) SetNetwork(network string) error {
 func (a *CEPAccount) Close() {
 	// Setting the fields to their zero value effectively clears them.
 	a.PrivateKey = nil
-	a.PublicKey = nil
+	a.PublicKey = ""
 	a.Address = ""
-	a.Permissions = nil
 }
 
 // SignData creates a cryptographic signature for the given data using the
@@ -215,12 +219,12 @@ func (a *CEPAccount) SignData(dataToSign []byte) (string, error) {
 // response cannot be parsed.
 func (a *CEPAccount) GetTransaction(transactionHash string) (map[string]interface{}, error) {
 	// The Network Access Gateway URL must be set to know which network to query.
-	if a.NAG_URL == "" {
+	if a.NAGURL == "" {
 		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
 	}
 
 	// Construct the full API endpoint URL for fetching a transaction.
-	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAG_URL, transactionHash)
+	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAGURL, transactionHash)
 
 	// Perform the HTTP GET request.
 	resp, err := http.Get(requestURL)
@@ -260,12 +264,12 @@ func (a *CEPAccount) GetTransaction(transactionHash string) (map[string]interfac
 // fails, or the response body cannot be properly parsed.
 func (a *CEPAccount) GetTransactionByID(transactionID string) (map[string]interface{}, error) {
 	// A Network Access Gateway URL must be configured to identify the target network.
-	if a.NAG_URL == "" {
+	if a.NAGURL == "" {
 		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
 	}
 
 	// Construct the full API endpoint for fetching the transaction by its ID.
-	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAG_URL, transactionID)
+	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAGURL, transactionID)
 
 	// Execute the HTTP GET request to the network.
 	resp, err := http.Get(requestURL)
@@ -307,7 +311,7 @@ func (a *CEPAccount) GetTransactionByID(transactionID string) (map[string]interf
 // network request fails.
 func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{}, error) {
 	// A Network Access Gateway URL must be configured to identify the target network.
-	if a.NAG_URL == "" {
+	if a.NAGURL == "" {
 		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
 	}
 
@@ -319,7 +323,7 @@ func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{
 	}
 
 	// Create a new HTTP POST request. The body of the request is the JSON payload.
-	req, err := http.NewRequest("POST", a.NAG_URL, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequest("POST", a.NAGURL, bytes.NewBuffer(jsonPayload))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -364,12 +368,12 @@ func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{
 // or the JSON response cannot be parsed.
 func (a *CEPAccount) GetTransactionOutcome(transactionID string) (map[string]interface{}, error) {
 	// The Network Access Gateway URL must be set to know which network to query.
-	if a.NAG_URL == "" {
+	if a.NAGURL == "" {
 		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
 	}
 
 	// Construct the full API endpoint URL for fetching the transaction outcome.
-	requestURL := fmt.Sprintf("%s/transaction/outcome/%s", a.NAG_URL, transactionID)
+	requestURL := fmt.Sprintf("%s/transaction/outcome/%s", a.NAGURL, transactionID)
 
 	// Perform an HTTP GET request to the specified endpoint.
 	resp, err := http.Get(requestURL)
