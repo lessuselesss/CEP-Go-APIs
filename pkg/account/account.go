@@ -2,10 +2,16 @@ package account
 
 import (
 	"bytes"
+	"crypto/ecdsa"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"net/url"
 )
 
 // CEPAccount holds the data for a Circular Enterprise Protocol account.
@@ -22,13 +28,6 @@ type CEPAccount struct {
 	Nonce       int
 	Data        map[string]interface{}
 	IntervalSec int
-}
-
-// nagResponse is the expected JSON response structure from the NAG server.
-type nagResponse struct {
-	S  int         `json:"s"`  // Status
-	R  AccountInfo `json:"r"`  // Result
-	NN string      `json:"nn"` // Network Node
 }
 
 // NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
@@ -113,335 +112,289 @@ func (a *Account) UpdateAccount() (bool, error) {
 	return false, errors.New("failed to update account, invalid response from server")
 }
 
-// /*
-//  * Returns the account data in JSON format and updates the Nonce field
-//  */
-//     async UpdateAccount() {
-//         if (!this.address) {
-//             throw new Error("Account is not open");
-//         }
+// SetNetwork configures the account to use a specific blockchain network.
+// It fetches the correct Network Access Gateway (NAG) URL for the given
+// network identifier (e.g., "devnet", "testnet", "mainnet") and updates the
+// NAG_URL field on the CEPAccount struct. A custom network URL can also be used.
+func (a *CEPAccount) SetNetwork(network string) error {
+	// Construct the full URL by appending the network identifier to the base network URL.
+	nagURL, err := url.Parse(a.NetworkURL + network)
+	if err != nil {
+		return fmt.Errorf("invalid network URL: %w", err)
+	}
 
-//         let data = {
-//             "Blockchain": HexFix(this.blockchain),
-//             "Address": HexFix(this.address),
-//             "Version": this.codeVersion
-//         };
+	// Perform an HTTP GET request to retrieve network configuration details.
+	resp, err := http.Get(nagURL.String())
+	if err != nil {
+		return fmt.Errorf("failed to fetch network URL: %w", err)
+	}
+	defer resp.Body.Close()
 
-//         try {
-//             const response = await fetch(this.NAG_URL + 'Circular_GetWalletNonce_' + this.NETWORK_NODE, {
-//                 method: 'POST',
-//                 headers: { "Content-Type": "application/json" },
-//                 body: JSON.stringify(data),
-//             });
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("network request failed with status: %s", resp.Status)
+	}
 
-//             if (!response.ok) {
-//                 throw new Error(`HTTP error! status: ${response.status}`);
-//             }
+	// The response body is expected to be a JSON object containing the status
+	// and the specific NAG URL for the requested network. We decode it into a
+	// temporary struct.
+	var result struct {
+		Status  string `json:"status"`
+		URL     string `json:"url"`
+		Message string `json:"message"`
+	}
 
-//             const jsonResponse = await response.json();
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return fmt.Errorf("failed to decode network response: %w", err)
+	}
 
-//             if (jsonResponse.Result === 200 && jsonResponse.Response && jsonResponse.Response.Nonce !== undefined) {
-//                 this.Nonce = jsonResponse.Response.Nonce + 1;
-//                 return true;
-//             } else {
-//                 throw new Error('Invalid response format or missing Nonce field');
-//             }
-//         } catch (error) {
-//             console.error('Error:', error);
-//             return false;
-//         }
-//     }
+	// If the request was successful, update the account's NAG_URL.
+	// Otherwise, return an error with the message from the provider.
+	if result.Status == "success" && result.URL != "" {
+		a.NAG_URL = result.URL
+	} else {
+		// The 'message' field in the JSON response provides context for the failure.
+		return fmt.Errorf("failed to set network: %s", result.Message)
+	}
 
-// /*
-//  *    selects the blockchain network
-//  *    network : selected network and it can be 'devnet', 'testnet', 'mainnet' or a custom one
-//  */
-//   async  SetNetwork(network) {
+	return nil
+}
 
-//             try {
-//                   // Construct the URL with the network parameter
-//                   const nagUrl = NETWORK_URL + encodeURIComponent(network);
+// Close securely clears all sensitive credential data from the CEPAccount instance.
+// It zeroes out the private key, public key, address, and permissions fields.
+// It is a best practice to call this method when the account object is no longer
+// needed to prevent sensitive data from lingering in the application's memory.
+func (a *CEPAccount) Close() {
+	// Setting the fields to their zero value effectively clears them.
+	a.PrivateKey = nil
+	a.PublicKey = nil
+	a.Address = ""
+	a.Permissions = nil
+}
 
-//                   // Make the fetch request
-//                   const response = await fetch(nagUrl, {
-//                       method: 'GET',
-//                       headers: {
-//                           'Accept': 'application/json'
-//                       }
-//                   });
+// SignData creates a cryptographic signature for the given data using the
+// account's private key. It operates by first hashing the input data with
+// SHA-256 and then signing the resulting hash using ECDSA with the secp256k1 curve.
+//
+// The dataToSign parameter is the raw data to be signed.
+//
+// It returns the signature as a hex-encoded string in ASN.1 DER format.
+// An error is returned if the private key is not available or if the
+// signing process fails.
+func (a *CEPAccount) SignData(dataToSign []byte) (string, error) {
+	// A private key must be present in the account to sign data.
+	if a.PrivateKey == nil {
+		return "", fmt.Errorf("private key is not available for signing")
+	}
 
-//                   // Check if the request was successful
-//                   if (!response.ok) {
-//                       throw new Error(`HTTP error! status: ${response.status}`);
-//                   }
+	// Hash the input data using SHA-256. The signing algorithm operates on a
+	// fixed-size hash of the data, not the raw data itself.
+	hasher := sha256.New()
+	hasher.Write(dataToSign)
+	hashedData := hasher.Sum(nil)
 
-//                   // Parse the JSON response
-//                   const data = await response.json();
+	// Sign the hashed data with the private key. crypto/rand.Reader is used as
+	// a source of entropy to ensure the signature is non-deterministic and secure.
+	// SignASN1 returns the signature in ASN.1 DER format, which is a standard way
+	// to encode ECDSA signatures.
+	signature, err := ecdsa.SignASN1(rand.Reader, a.PrivateKey, hashedData)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign data: %w", err)
+	}
 
-//                   // Check if the status is success and URL exists
-//                   if (data.status === 'success' && data.url) {
+	// Encode the binary signature into a more portable hexadecimal string.
+	return hex.EncodeToString(signature), nil
+}
 
-//                       this.NAG_URL= data.url;
+// GetTransaction retrieves the details of a specific transaction from the blockchain
+// using its unique transaction hash.
+//
+// The transactionHash parameter is the hex-encoded string identifying the transaction.
+//
+// It returns a map[string]interface{} containing the transaction details on success.
+// An error is returned if the NAG_URL is not set, the request fails, or the
+// response cannot be parsed.
+func (a *CEPAccount) GetTransaction(transactionHash string) (map[string]interface{}, error) {
+	// The Network Access Gateway URL must be set to know which network to query.
+	if a.NAG_URL == "" {
+		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
+	}
 
-//                   } else {
-//                       throw new Error(data.message || 'Failed to get URL');
-//                   }
+	// Construct the full API endpoint URL for fetching a transaction.
+	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAG_URL, transactionHash)
 
-//               } catch (error) {
-//                   console.log('Error fetching network URL:', error);
-//                   throw error; // Re-throw the error so the caller can handle it
-//               }
+	// Perform the HTTP GET request.
+	resp, err := http.Get(requestURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send get transaction request: %w", err)
+	}
+	defer resp.Body.Close()
 
-//     }
+	// A successful request should return a 200 OK status.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("network returned an error: %s", resp.Status)
+	}
 
-// /*
-//  *    selects the blockchain
-//  *    chain : blockchain address
-//  */
+	// Read the response body.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
-// 	SetBlockchain(chain) {
-//         this.blockchain = chain;
-//     }
+	// Unmarshal the JSON response into a map. Using a map provides flexibility
+	// as the transaction structure may vary.
+	var transactionDetails map[string]interface{}
+	if err := json.Unmarshal(body, &transactionDetails); err != nil {
+		return nil, fmt.Errorf("failed to decode transaction details: %w", err)
+	}
 
-// /*
-//  *    closes the account
-//  */
-//     Close() {
-//         this.address = null;
-//         this.publicKey = null;
-//         this.info = null;
-//         this.lastError='';
-//         this.NAG_URL = DEFAULT_NAG;
-//         this.NETWORK_NODE = '';
-//         this.blockchain = DEFAULT_CHAIN;
-//         this.LatestTxID = '';
-//         this.data = {};
-//         this.intervalSec = 2;
-//     }
+	return transactionDetails, nil
+}
 
-// /*
-//  *    signs data
-//  *          data : data that you wish to sign
-//  *    provateKey : private key associated to the account
-//  */
-//     SignData(data, privateKey) {
+// GetTransactionByID retrieves the details of a specific transaction from the blockchain
+// using its unique transaction ID (often the transaction hash).
+//
+// The transactionID parameter is the unique string identifying the transaction.
+//
+// On success, it returns a map[string]interface{} containing the transaction
+// details. An error is returned if the NAG_URL is not set, the network request
+// fails, or the response body cannot be properly parsed.
+func (a *CEPAccount) GetTransactionByID(transactionID string) (map[string]interface{}, error) {
+	// A Network Access Gateway URL must be configured to identify the target network.
+	if a.NAG_URL == "" {
+		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
+	}
 
-//         if (!this.address) {
-//             throw new Error("Account is not open");
-//         }
+	// Construct the full API endpoint for fetching the transaction by its ID.
+	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAG_URL, transactionID)
 
-//         const EC = elliptic.ec;
-//         const ec = new EC('secp256k1');
-//         const key = ec.keyFromPrivate(HexFix(privateKey), 'hex');
-//         const msgHash = sha256(data);
+	// Execute the HTTP GET request to the network.
+	resp, err := http.Get(requestURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send get transaction request: %w", err)
+	}
+	defer resp.Body.Close()
 
-//         // The signature is a DER-encoded hex string
-//         const signature = key.sign(msgHash).toDER('hex');
-//         return signature;
-//     }
+	// Check for a successful HTTP response status.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("network returned a non-200 status code: %s", resp.Status)
+	}
 
-// /*
-//  *   Searches a Transaction by its ID
-//  *   The transaction will be searched initially between the pending transactions and then in the blockchain
-//  *
-//  *   blockNum: block where the transaction was saved
-//  *   txID: transaction ID
-//  */
-// async GetTransaction(blockNum, txID) {
-//     try {
-//         let data = {
-//             "Blockchain" : HexFix(this.blockchain),
-//                     "ID" : HexFix(txID),
-//                  "Start" : String(blockNum),
-//                    "End" : String(blockNum),
-//                "Version" : this.codeVersion
-//         };
+	// Read the entire response body into a byte slice.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
-//         const response = await fetch(this.NAG_URL + 'Circular_GetTransactionbyID_' + this.NETWORK_NODE, {
-//             method: 'POST',
-//             headers: { 'Content-Type': 'application/json' },
-//             body: JSON.stringify(data)
-//         });
+	// Unmarshal the JSON response into a map. This provides a flexible structure
+	// for accessing transaction data, which can have a variable schema.
+	var transactionDetails map[string]interface{}
+	if err := json.Unmarshal(body, &transactionDetails); err != nil {
+		return nil, fmt.Errorf("failed to decode transaction JSON: %w", err)
+	}
 
-//         if (!response.ok) {
-//             throw new Error('Network response was not ok');
-//         }
+	return transactionDetails, nil
+}
 
-//         return response.json();
-//     } catch (error) {
-//         console.error('Error:', error);
-//         throw error;
-//     }
-// }
+// SubmitCertificate sends a given certificate to the blockchain for processing
+// and inclusion. It serializes the certificate object into a JSON payload and
+// submits it to the account's configured Network Access Gateway (NAG) URL.
+//
+// The 'cert' parameter is a pointer to the Certificate object to be submitted.
+//
+// On success, it returns a map[string]interface{} containing the response from
+// the network, which typically includes a transaction hash. An error is returned
+// if the NAG_URL is not set, if the certificate cannot be serialized, or if the
+// network request fails.
+func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{}, error) {
+	// A Network Access Gateway URL must be configured to identify the target network.
+	if a.NAG_URL == "" {
+		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
+	}
 
-// /*
-//  *   Searches a Transaction by its ID
-//  *   The transaction will be searched initially between the pending transactions and then in the blockchain
-//  *
-//  *   TxID: transaction ID
-//  *   Start: Starting block
-//  *   End: End block
-//  *
-//  *   if End = 0 Start indicates the number of blocks starting from the last block minted
-//  */
-// async GetTransactionbyID(TxID, Start, End) {
-//     try {
-//         let data = {
-//             "Blockchain" : HexFix(this.blockchain),
-//                     "ID" : HexFix(TxID),
-//                  "Start" : String(Start),
-//                    "End" : String(End),
-//                "Version" : this.codeVersion
-//         };
+	// Marshal the Certificate struct into a JSON byte slice. This is the payload
+	// that will be sent to the network.
+	jsonPayload, err := json.Marshal(cert)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal certificate to JSON: %w", err)
+	}
 
-//         const response = await fetch(this.NAG_URL + 'Circular_GetTransactionbyID_' + this.NETWORK_NODE, {
-//             method: 'POST',
-//             headers: { 'Content-Type': 'application/json' },
-//             body: JSON.stringify(data)
-//         });
+	// Create a new HTTP POST request. The body of the request is the JSON payload.
+	req, err := http.NewRequest("POST", a.NAG_URL, bytes.NewBuffer(jsonPayload))
+	if err != nil {
+		return nil, fmt.Errorf("failed to create request: %w", err)
+	}
+	req.Header.Set("Content-Type", "application/json")
 
-//         if (!response.ok) {
-//             throw new Error('Network response was not ok');
-//         }
+	// Execute the HTTP request using a default client.
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to submit certificate: %w", err)
+	}
+	defer resp.Body.Close()
 
-//         return response.json();
-//     } catch (error) {
-//         console.error('Error:', error);
-//         throw error;
-//     }
-// }
+	// Read the response from the network.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
-// /*
-//  *   Searches a Transaction by its ID
-//  *   The transaction will be searched initially between the pending transactions and then in the blockchain
-//  *
-//  *   TxID: transaction ID
-//  *   Start: Starting block
-//  *   End: End block
-//  *
-//  *   if End = 0 Start indicates the number of blocks starting from the last block minted
-//  */
-// async GetTransaction(BlockID, TxID) {
-//     try {
-//         let data = {
-//             "Blockchain" : HexFix(this.blockchain),
-//                     "ID" : HexFix(TxID),
-//                  "Start" : String(BlockID),
-//                    "End" : String(BlockID),
-//                "Version" : this.codeVersion
-//         };
+	// Check for non-successful HTTP status codes.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("network returned an error - status: %s, body: %s", resp.Status, string(body))
+	}
 
-//         const response = await fetch(this.NAG_URL + 'Circular_GetTransactionbyID_' + this.NETWORK_NODE, {
-//             method: 'POST',
-//             headers: { 'Content-Type': 'application/json' },
-//             body: JSON.stringify(data)
-//         });
+	// Unmarshal the JSON response into a map for flexible access to the result.
+	var responseMap map[string]interface{}
+	if err := json.Unmarshal(body, &responseMap); err != nil {
+		return nil, fmt.Errorf("failed to decode response JSON: %w", err)
+	}
 
-//         if (!response.ok) {
-//             throw new Error('Network response was not ok');
-//         }
+	return responseMap, nil
+}
 
-//         return response.json();
-//     } catch (error) {
-//         console.error('Error:', error);
-//         throw error;
-//     }
-// }
+// GetTransactionOutcome retrieves the final processing result of a transaction
+// from the blockchain using its unique ID. This is often used to confirm
+// whether a submitted transaction was successfully validated and included in a block.
+//
+// The 'transactionID' parameter is the unique string identifying the transaction.
+//
+// It returns a map[string]interface{} containing the outcome details on success.
+// An error is returned if the NAG_URL is not configured, the network request fails,
+// or the JSON response cannot be parsed.
+func (a *CEPAccount) GetTransactionOutcome(transactionID string) (map[string]interface{}, error) {
+	// The Network Access Gateway URL must be set to know which network to query.
+	if a.NAG_URL == "" {
+		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
+	}
 
-// /*
-//  *    Submit data to the blockchain
-//  *          data : data that you wish to sign
-//  *    provateKey : private key associated to the account
-//  */
-//     async submitCertificate(pdata, privateKey) {
-//         if (!this.address) {
-//             throw new Error("Account is not open");
-//         }
+	// Construct the full API endpoint URL for fetching the transaction outcome.
+	requestURL := fmt.Sprintf("%s/transaction/outcome/%s", a.NAG_URL, transactionID)
 
-//         const PayloadObject = {
-//             "Action": "CP_CERTIFICATE",
-//             "Data": stringToHex(pdata)
-//         };
+	// Perform an HTTP GET request to the specified endpoint.
+	resp, err := http.Get(requestURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to send get transaction outcome request: %w", err)
+	}
+	defer resp.Body.Close()
 
-//         const jsonstr = JSON.stringify(PayloadObject);
-//         const Payload = stringToHex(jsonstr);
-//         const Timestamp = getFormattedTimestamp();
-//         const str = HexFix(this.blockchain) + HexFix(this.address) + HexFix(this.address) + Payload + this.Nonce + Timestamp;
-//         const ID = sha256(str);
-//         const Signature = this.signData(ID, privateKey);
+	// Check for a successful HTTP response. A non-200 status indicates a problem.
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("network returned an error: %s", resp.Status)
+	}
 
-//         let data = {
-//             "ID": ID,
-//             "From": HexFix(this.address),
-//             "To": HexFix(this.address),
-//             "Timestamp": Timestamp,
-//             "Payload": String(Payload),
-//             "Nonce": String(this.Nonce),
-//             "Signature": Signature,
-//             "Blockchain": HexFix(this.blockchain),
-//             "Type": 'C_TYPE_CERTIFICATE',
-//             "Version": this.codeVersion
-//         };
+	// Read the entire body of the HTTP response.
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read response body: %w", err)
+	}
 
-//         try {
-//             const response = await fetch(this.NAG_URL + 'Circular_AddTransaction_' + this.NETWORK_NODE, {
-//                 method: 'POST',
-//                 headers: { 'Content-Type': 'application/json' },
-//                 body: JSON.stringify(data)
-//             });
+	// Unmarshal the JSON response into a map. Using a map allows for flexible handling
+	// of various outcome structures returned by the network.
+	var outcomeDetails map[string]interface{}
+	if err := json.Unmarshal(body, &outcomeDetails); err != nil {
+		return nil, fmt.Errorf("failed to decode transaction outcome: %w", err)
+	}
 
-//             if (!response.ok) {
-//                 throw new Error('Network response was not ok');
-//             }
-
-//             return await response.json();
-//         } catch (error) {
-//             console.error('Error:', error);
-//             return { success: false, message: 'Server unreachable or request failed', error: error.toString() };
-//         }
-//     }
-
-// /*
-//  *    Recursive transaction finality polling
-//  *    will search a transaction every  intervalSec seconds with a desired timeout.
-//  *
-//  *    Blockchain: blockchain where the transaction was submitted
-//  *    TxID: Transaction ID
-//  *    timeoutSec: Waiting timeout
-//  *
-//  */
-// async GetTransactionOutcome(TxID, timeoutSec) {
-//     return new Promise((resolve, reject) => {
-//         const startTime = Date.now();
-//         const interval = this.intervalSec * 1000;  // Convert seconds to milliseconds
-//         const timeout = timeoutSec * 1000;    // Convert seconds to milliseconds
-
-//         const checkTransaction = () => {
-//             const elapsedTime = Date.now() - startTime;
-
-//             console.log('Checking transaction...', { elapsedTime, timeout });
-
-//             if (elapsedTime > timeout) {
-//                 console.log('Timeout exceeded');
-//                 reject(new Error('Timeout exceeded'));
-//                 return;
-//             }
-
-//             this.getTransactionbyID(TxID, 0, 10).then(data => {
-//                     console.log('Data received:', data);
-//                     if (data.Result === 200 && data.Response !== 'Transaction Not Found' && data.Response.Status!=='Pending') {
-//                         resolve(data.Response);  // Resolve if transaction is found and not 'Transaction Not Found'
-//                     } else {
-//                         console.log('Transaction not yet confirmed or not found, polling again...');
-//                         setTimeout(checkTransaction, interval);  // Continue polling
-//                     }
-//                 })
-//                 .catch(error => {
-//                     console.log('Error fetching transaction:', error);
-//                     reject(error);  // Reject on error
-//                 });
-//         };
-
-//         setTimeout(checkTransaction, interval);  // Start polling
-//     });
-// }
+	return outcomeDetails, nil
+}
