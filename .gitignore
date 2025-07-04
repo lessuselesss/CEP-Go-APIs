@@ -7,3 +7,5 @@ result
 target
 flake.*
 .aider*
+*.java
+*.js
