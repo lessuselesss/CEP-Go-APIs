@@ -2,8 +2,6 @@ package account
 
 import (
 	"bytes"
-	"crypto/ecdsa"
-	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -13,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	decdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 	"github.com/lessuselesss/CEP-Go-APIs/internal/utils"
 	. "github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
 )
@@ -32,7 +32,7 @@ type CEPAccount struct {
 	Data        map[string]interface{}
 	IntervalSec int
 	NetworkURL  string
-	PrivateKey  *ecdsa.PrivateKey
+	PrivateKey  *secp256k1.PrivateKey
 }
 
 // NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
@@ -196,17 +196,13 @@ func (a *CEPAccount) SignData(dataToSign []byte) (string, error) {
 	hasher.Write(dataToSign)
 	hashedData := hasher.Sum(nil)
 
-	// Sign the hashed data with the private key. crypto/rand.Reader is used as
-	// a source of entropy to ensure the signature is non-deterministic and secure.
-	// SignASN1 returns the signature in ASN.1 DER format, which is a standard way
-	// to encode ECDSA signatures.
-	signature, err := ecdsa.SignASN1(rand.Reader, a.PrivateKey, hashedData)
-	if err != nil {
-		return "", fmt.Errorf("failed to sign data: %w", err)
-	}
+	// Sign the hashed data with the private key using the secp256k1 library.
+	// The Sign function from decred/dcrd/dcrec/secp256k1/v4/ecdsa is deterministic by default.
+	signature := decdsa.Sign(a.PrivateKey, hashedData)
 
-	// Encode the binary signature into a more portable hexadecimal string.
-	return hex.EncodeToString(signature), nil
+	// The signature is returned as a raw byte slice. We need to serialize it to DER format
+	// for compatibility, as the original function returned ASN.1 DER.
+	return hex.EncodeToString(signature.Serialize()), nil
 }
 
 // GetTransaction retrieves the details of a specific transaction from the blockchain
@@ -233,7 +229,6 @@ func (a *CEPAccount) GetTransaction(transactionHash string) (map[string]interfac
 	}
 	defer resp.Body.Close()
 
-	// A successful request should return a 200 OK status.
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("network returned an error: %s", resp.Status)
 	}
@@ -255,8 +250,7 @@ func (a *CEPAccount) GetTransaction(transactionHash string) (map[string]interfac
 }
 
 // GetTransactionByID retrieves the details of a specific transaction from the blockchain
-// using its unique transaction ID (often the transaction hash).
-//
+// using its unique transaction ID (often the transaction hash).n//
 // The transactionID parameter is the unique string identifying the transaction.
 //
 // On success, it returns a map[string]interface{} containing the transaction
@@ -283,7 +277,7 @@ func (a *CEPAccount) GetTransactionByID(transactionID string) (map[string]interf
 		return nil, fmt.Errorf("network returned a non-200 status code: %s", resp.Status)
 	}
 
-	// Read the entire response body into a byte slice.
+	// Read the entire body of the HTTP response.
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read response body: %w", err)

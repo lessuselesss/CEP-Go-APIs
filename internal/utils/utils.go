@@ -8,22 +8,22 @@ import (
 )
 
 // PadNumber adds a leading zero to numbers less than 10.
-func padNumber(num int) string {
+func PadNumber(num int) string {
 	if num < 10 {
 		return fmt.Sprintf("0%d", num)
 	}
 	return fmt.Sprintf("%d", num)
 }
 
-// getFormattedTimestamp generates a UTC timestamp in YYYY:MM:DD-HH:MM:SS format.
+// GetFormattedTimestamp generates a UTC timestamp in YYYY:MM:DD-HH:MM:SS format.
 func GetFormattedTimestamp() string {
 	now := time.Now().UTC()
 	year := now.Year()
-	month := padNumber(int(now.Month()))
-	day := padNumber(now.Day())
-	hours := padNumber(now.Hour())
-	minutes := padNumber(now.Minute())
-	seconds := padNumber(now.Second())
+	month := PadNumber(int(now.Month()))
+	day := PadNumber(now.Day())
+	hours := PadNumber(now.Hour())
+	minutes := PadNumber(now.Minute())
+	seconds := PadNumber(now.Second())
 	return fmt.Sprintf("%d:%s:%s-%s:%s:%s", year, month, day, hours, minutes, seconds)
 }
 

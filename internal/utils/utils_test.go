@@ -49,7 +49,7 @@ func TestGetFormattedTimestamp(t *testing.T) {
 func TestPadNumber(t *testing.T) {
 	// Test case for a single-digit number
 	t.Run("single digit", func(t *testing.T) {
-		result := padNumber(5)
+		result := PadNumber(5)
 		expected := "05"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -58,7 +58,7 @@ func TestPadNumber(t *testing.T) {
 
 	// Test case for a double-digit number
 	t.Run("double digit", func(t *testing.T) {
-		result := padNumber(12)
+		result := PadNumber(12)
 		expected := "12"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -67,7 +67,7 @@ func TestPadNumber(t *testing.T) {
 
 	// Test case for zero
 	t.Run("zero", func(t *testing.T) {
-		result := padNumber(0)
+		result := PadNumber(0)
 		expected := "00"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -76,7 +76,7 @@ func TestPadNumber(t *testing.T) {
 
 	// Test case for the boundary condition
 	t.Run("boundary ten", func(t *testing.T) {
-		result := padNumber(10)
+		result := PadNumber(10)
 		expected := "10"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -97,7 +97,7 @@ func TestPadNumber(t *testing.T) {
 
 func TestHexFix(t *testing.T) {
 	t.Run("with prefix", func(t *testing.T) {
-		result := hexFix("0x123")
+		result := HexFix("0x123")
 		expected := "123"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -105,7 +105,7 @@ func TestHexFix(t *testing.T) {
 	})
 
 	t.Run("without prefix", func(t *testing.T) {
-		result := hexFix("123")
+		result := HexFix("123")
 		expected := "123"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -113,7 +113,7 @@ func TestHexFix(t *testing.T) {
 	})
 
 	t.Run("empty string", func(t *testing.T) {
-		result := hexFix("")
+		result := HexFix("")
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -121,7 +121,7 @@ func TestHexFix(t *testing.T) {
 	})
 
 	t.Run("only prefix", func(t *testing.T) {
-		result := hexFix("0x")
+		result := HexFix("0x")
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -129,7 +129,7 @@ func TestHexFix(t *testing.T) {
 	})
 
 	t.Run("prefix in middle", func(t *testing.T) {
-		result := hexFix("10x23")
+		result := HexFix("10x23")
 		expected := "10x23"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -139,7 +139,7 @@ func TestHexFix(t *testing.T) {
 
 func TestStringToHex(t *testing.T) {
 	t.Run("ascii string", func(t *testing.T) {
-		result := stringToHex("hello")
+		result := StringToHex("hello")
 		expected := "68656c6c6f"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -147,7 +147,7 @@ func TestStringToHex(t *testing.T) {
 	})
 
 	t.Run("empty string", func(t *testing.T) {
-		result := stringToHex("")
+		result := StringToHex("")
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -155,7 +155,7 @@ func TestStringToHex(t *testing.T) {
 	})
 
 	t.Run("string with numbers and symbols", func(t *testing.T) {
-		result := stringToHex("123!@#")
+		result := StringToHex("123!@#")
 		expected := "313233214023"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -165,39 +165,39 @@ func TestStringToHex(t *testing.T) {
 
 func TestHexToString(t *testing.T) {
 	t.Run("valid hex string", func(t *testing.T) {
-		result := hexToString("68656c6c6f")
+		result := HexToString("68656c6c6f")
 		expected := "hello"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
 		}
 	})
 
-	t.Run("with 0x prefix", func(t *testing.T) {
-		result := hexToString("0x68656c6c6f")
+		t.Run("with 0x prefix", func(t *testing.T) {
+		result := HexToString("0x68656c6c6f")
 		expected := "hello"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
 		}
 	})
 
-	t.Run("empty string", func(t *testing.T) {
-		result := hexToString("")
+		t.Run("empty string", func(t *testing.T) {
+		result := HexToString("")
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
 		}
 	})
 
-	t.Run("invalid hex string", func(t *testing.T) {
-		result := hexToString("invalid")
+		t.Run("invalid hex string", func(t *testing.T) {
+		result := HexToString("invalid")
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
 		}
 	})
 
-	t.Run("with null byte", func(t *testing.T) {
-		result := hexToString("68656c006c6f")
+		t.Run("with null byte", func(t *testing.T) {
+		result := HexToString("68656c006c6f")
 		expected := "hello"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
