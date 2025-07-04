@@ -10,7 +10,14 @@ import (
 	"testing"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
-	. "github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
+	account "github.com/lessuselesss/CEP-Go-APIs/pkg/account"
+	certificate "github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
+)
+
+const (
+	DefaultNAG   = "https://nag.circularlabs.io/NAG.php?cep="
+	DefaultChain = "0x8a20baa40c45dc5055aeb26197c203e576ef389d9acb171bd62da11dc5ad72b2"
+	LibVersion   = "1.0.13"
 )
 
 func TestOpen(t *testing.T) {
@@ -36,7 +43,7 @@ func TestOpen(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			acc := NewCEPAccount()
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 			err := acc.Open(tc.address)
 
 			if tc.expectError {
@@ -124,7 +131,7 @@ func TestUpdateAccount(t *testing.T) {
 			}))
 			defer server.Close()
 
-			acc := NewCEPAccount()
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 			if tc.accountAddress != "" {
 				acc.Open(tc.accountAddress)
 			}
@@ -235,7 +242,7 @@ func TestSetNetwork(t *testing.T) {
 				defer server.Close()
 			}
 
-			acc := NewCEPAccount()
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 			acc.NAGURL = initialNagURL // Set initial NAG URL
 
 			// Set the NetworkURL for the account.
@@ -303,7 +310,7 @@ func TestSignData(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			acc := NewCEPAccount()
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 			acc.PrivateKey = tc.privateKey
 
 			signature, err := acc.SignData(tc.dataToSign)
@@ -334,7 +341,7 @@ func TestSignDataRFC6979(t *testing.T) {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
 
-	acc := NewCEPAccount()
+	acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 	acc.PrivateKey = privateKey
 
 	data := []byte("test message for RFC 6979")
@@ -352,12 +359,14 @@ func TestSignDataRFC6979(t *testing.T) {
 
 	// According to RFC 6979, signatures must be deterministic.
 	if sig1 != sig2 {
-		t.Errorf("Signatures are not deterministic. RFC 6979 requires that signing the same data with the same key produces the same signature.\nSig1: %s\nSig2: %s", sig1, sig2)
+		t.Errorf(`Signatures are not deterministic. RFC 6979 requires that signing the same data with the same key produces the same signature.
+Sig1: %s
+Sig2: %s`, sig1, sig2)
 	}
 }
 
 func TestClose(t *testing.T) {
-	acc := NewCEPAccount()
+	acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 
 	// Populate fields with dummy values
 	privateKey, err := secp256k1.GeneratePrivateKey()
@@ -400,10 +409,10 @@ func TestSubmitCertificate(t *testing.T) {
 			mockResponse:   `{"txHash": "0xabc123", "status": "success"}`,
 			mockStatusCode: http.StatusOK,
 			cert: &Certificate{
-				Version:   "1.0",
-				Data:      "test data",
+				Version: "1.0",
+				Data:    "test data",
 			},
-			expectError:   false,
+			expectError:    false,
 			expectedResult: map[string]interface{}{"txHash": "0xabc123", "status": "success"},
 		},
 		{
@@ -412,8 +421,8 @@ func TestSubmitCertificate(t *testing.T) {
 			mockResponse:   "",
 			mockStatusCode: http.StatusOK,
 			cert: &Certificate{
-				Version:   "1.0",
-				Data:      "test data",
+				Version: "1.0",
+				Data:    "test data",
 			},
 			expectError:   true,
 			expectedError: "network is not set. Please call SetNetwork() first",
@@ -424,8 +433,8 @@ func TestSubmitCertificate(t *testing.T) {
 			mockResponse:   "Internal Server Error",
 			mockStatusCode: http.StatusInternalServerError,
 			cert: &Certificate{
-				Version:   "1.0",
-				Data:      "test data",
+				Version: "1.0",
+				Data:    "test data",
 			},
 			expectError:   true,
 			expectedError: "network returned an error - status: 500 Internal Server Error, body: Internal Server Error",
@@ -433,11 +442,11 @@ func TestSubmitCertificate(t *testing.T) {
 		{
 			name:           "Invalid JSON Response",
 			nagURL:         "http://localhost:8080",
-			mockResponse:   "{\"txHash\": \"0xabc123\", \"status\": \"success\"", // Malformed JSON
+			mockResponse:   `{"txHash": "0xabc123", "status": "success"`, // Malformed JSON
 			mockStatusCode: http.StatusOK,
 			cert: &Certificate{
-				Version:   "1.0",
-				Data:      "test data",
+				Version: "1.0",
+				Data:    "test data",
 			},
 			expectError:   true,
 			expectedError: "failed to decode response JSON",
@@ -471,7 +480,7 @@ func TestSubmitCertificate(t *testing.T) {
 				defer server.Close()
 			}
 
-			acc := NewCEPAccount()
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 			if tc.nagURL != "" {
 				acc.NAGURL = server.URL
 			} else {
@@ -508,6 +517,308 @@ func TestSubmitCertificate(t *testing.T) {
 				}
 				if !bytes.Equal(capturedRequestBody, expectedRequestBody) {
 					t.Errorf("Request body mismatch. Expected %s, got %s", string(expectedRequestBody), string(capturedRequestBody))
+				}
+			}
+		})
+	}
+}
+
+func TestGetTransaction(t *testing.T) {
+	testCases := []struct {
+		name             string
+		transactionHash  string
+		mockResponse     string
+		mockStatusCode   int
+		nagURL           string
+		expectError      bool
+		expectedErrorMsg string
+		expectedResult   map[string]interface{}
+	}{
+		{
+			name:            "Successful GetTransaction",
+			transactionHash: "0xabcdef123456",
+			mockResponse:    `{"status":"success", "details":"transaction details"}`,
+			mockStatusCode:  http.StatusOK,
+			nagURL:          "http://localhost:8080",
+			expectError:     false,
+			expectedResult:  map[string]interface{}{"status": "success", "details": "transaction details"},
+		},
+		{
+			name:             "NAGURL Not Set",
+			transactionHash:  "0xabcdef123456",
+			mockResponse:     "",
+			mockStatusCode:   0,
+			nagURL:           "",
+			expectError:      true,
+			expectedErrorMsg: "network is not set. Please call SetNetwork() first",
+		},
+		{
+			name:             "HTTP Error - Non-200 Status",
+			transactionHash:  "0xabcdef123456",
+			mockResponse:     "Not Found",
+			mockStatusCode:   http.StatusNotFound,
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "network returned an error: 404 Not Found",
+		},
+		{
+			name:             "Invalid JSON Response",
+			transactionHash:  "0xabcdef123456",
+			mockResponse:     `{"status":"success", "details":}`, // Malformed JSON
+			mockStatusCode:   http.StatusOK,
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "failed to decode transaction details",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var server *httptest.Server
+			if tc.nagURL != "" {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tc.mockStatusCode)
+					w.Write([]byte(tc.mockResponse))
+				}))
+				defer server.Close()
+			}
+
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
+			if tc.nagURL != "" {
+				acc.NAGURL = server.URL
+			} else {
+				acc.NAGURL = ""
+			}
+
+			result, err := acc.GetTransaction(tc.transactionHash)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatal("Expected an error but got nil")
+				}
+				if !strings.Contains(err.Error(), tc.expectedErrorMsg) {
+					t.Errorf("Expected error message to contain '%s', but got '%s'", tc.expectedErrorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error, but got: %v", err)
+				}
+				if len(result) != len(tc.expectedResult) {
+					t.Errorf("Expected result map length %d, but got %d", len(tc.expectedResult), len(result))
+				}
+				for k, v := range tc.expectedResult {
+					if result[k] != v {
+						t.Errorf("Expected result[%s] to be %v, but got %v", k, v, result[k])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGetTransactionByID(t *testing.T) {
+	testCases := []struct {
+		name             string
+		transactionID    string
+		mockResponse     string
+		mockStatusCode   int
+		nagURL           string
+		expectError      bool
+		expectedErrorMsg string
+		expectedResult   map[string]interface{}
+	}{
+		{
+			name:           "Successful GetTransactionByID",
+			transactionID:  "0xabcdef123456",
+			mockResponse:   `{"status":"success", "details":"transaction details by ID"}`,
+			mockStatusCode: http.StatusOK,
+			nagURL:         "http://localhost:8080",
+			expectError:    false,
+			expectedResult: map[string]interface{}{"status": "success", "details": "transaction details by ID"},
+		},
+		{
+			name:             "NAGURL Not Set",
+			transactionID:    "0xabcdef123456",
+			mockResponse:     "",
+			mockStatusCode:   0,
+			nagURL:           "",
+			expectError:      true,
+			expectedErrorMsg: "network is not set. Please call SetNetwork() first",
+		},
+		{
+			name:             "HTTP Error - Non-200 Status",
+			transactionID:    "0xabcdef123456",
+			mockResponse:     "Not Found",
+			mockStatusCode:   http.StatusNotFound,
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "network returned a non-200 status code: 404 Not Found",
+		},
+		{
+			name:             "Invalid JSON Response",
+			transactionID:    "0xabcdef123456",
+			mockResponse:     `{"status":"success", "details":}`, // Malformed JSON
+			mockStatusCode:   http.StatusOK,
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "failed to decode transaction JSON",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			var server *httptest.Server
+			if tc.nagURL != "" {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					w.WriteHeader(tc.mockStatusCode)
+					w.Write([]byte(tc.mockResponse))
+				}))
+				defer server.Close()
+			}
+
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
+			if tc.nagURL != "" {
+				acc.NAGURL = server.URL
+			} else {
+				acc.NAGURL = ""
+			}
+
+			result, err := acc.GetTransactionByID(tc.transactionID)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatal("Expected an error but got nil")
+				}
+				if !strings.Contains(err.Error(), tc.expectedErrorMsg) {
+					t.Errorf("Expected error message to contain '%s', but got '%s'", tc.expectedErrorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error, but got: %v", err)
+				}
+				if len(result) != len(tc.expectedResult) {
+					t.Errorf("Expected result map length %d, but got %d", len(tc.expectedResult), len(result))
+				}
+				for k, v := range tc.expectedResult {
+					if result[k] != v {
+						t.Errorf("Expected result[%s] to be %v, but got %v", k, v, result[k])
+					}
+				}
+			}
+		})
+	}
+}
+
+func TestGetTransactionOutcome(t *testing.T) {
+	testCases := []struct {
+		name             string
+		TxID             string
+		timeoutSec       int
+		mockResponses    []string
+		mockStatusCodes  []int
+		nagURL           string
+		expectError      bool
+		expectedErrorMsg string
+		expectedOutcome  map[string]interface{}
+	}{
+		{
+			name:            "Successful Outcome - Not Pending",
+			TxID:            "0x123",
+			timeoutSec:      5,
+			mockResponses:   []string{`{"Result":200, "Response":{"Status":"Pending"}}`, `{"Result":200, "Response":{"Status":"Confirmed", "Value":100}}`},
+			mockStatusCodes: []int{http.StatusOK, http.StatusOK},
+			nagURL:          "http://localhost:8080",
+			expectError:     false,
+			expectedOutcome: map[string]interface{}{"Status": "Confirmed", "Value": float64(100)},
+		},
+		{
+			name:             "Timeout Exceeded",
+			TxID:             "0x456",
+			timeoutSec:       1,
+			mockResponses:    []string{`{"Result":200, "Response":{"Status":"Pending"}}`, `{"Result":200, "Response":{"Status":"Pending"}}`},
+			mockStatusCodes:  []int{http.StatusOK, http.StatusOK},
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "timeout exceeded",
+		},
+		{
+			name:             "NAGURL Not Set",
+			TxID:             "0x789",
+			timeoutSec:       1, // Short timeout since it should fail immediately
+			mockResponses:    []string{},
+			mockStatusCodes:  []int{},
+			nagURL:           "",
+			expectError:      true,
+			expectedErrorMsg: "network is not set. Please call SetNetwork() first",
+		},
+		{
+			name:             "HTTP Error During Polling",
+			TxID:             "0xabc",
+			timeoutSec:       5,
+			mockResponses:    []string{`Internal Server Error`},
+			mockStatusCodes:  []int{http.StatusInternalServerError},
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "timeout exceeded", // Will eventually timeout if errors persist
+		},
+		{
+			name:             "Invalid JSON Response During Polling",
+			TxID:             "0xdef",
+			timeoutSec:       5,
+			mockResponses:    []string{`{"Result":200, "Response":{"Status":"Pending"}}`, `invalid json`},
+			mockStatusCodes:  []int{http.StatusOK, http.StatusOK},
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "timeout exceeded", // Will eventually timeout if errors persist
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			requestCount := 0
+			var server *httptest.Server
+			if tc.nagURL != "" {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					if requestCount < len(tc.mockResponses) {
+						w.WriteHeader(tc.mockStatusCodes[requestCount])
+						w.Write([]byte(tc.mockResponses[requestCount]))
+						requestCount++
+					} else {
+						w.WriteHeader(http.StatusOK)
+						w.Write([]byte(`{"Result":200, "Response":{"Status":"Pending"}}`)) // Default to pending if no more mock responses
+					}
+				}))
+				defer server.Close()
+			}
+
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
+			acc.IntervalSec = 1 // Set a short interval for faster test execution
+			if tc.nagURL != "" {
+				acc.NAGURL = server.URL
+			} else {
+				acc.NAGURL = ""
+			}
+
+			outcome, err := acc.GetTransactionOutcome(tc.TxID, tc.timeoutSec)
+
+			if tc.expectError {
+				if err == nil {
+					t.Fatal("Expected an error but got nil")
+				}
+				if !strings.Contains(err.Error(), tc.expectedErrorMsg) {
+					t.Errorf("Expected error message to contain '%s', but got '%s'", tc.expectedErrorMsg, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("Expected no error, but got: %v", err)
+				}
+				if len(outcome) != len(tc.expectedOutcome) {
+					t.Errorf("Expected outcome map length %d, but got %d", len(tc.expectedOutcome), len(outcome))
+				}
+				for k, v := range tc.expectedOutcome {
+					if outcome[k] != v {
+						t.Errorf("Expected outcome[%s] to be %v, but got %v", k, v, outcome[k])
+					}
 				}
 			}
 		})

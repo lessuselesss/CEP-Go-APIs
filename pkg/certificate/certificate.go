@@ -14,6 +14,13 @@ type Certificate struct {
 	Version       string `json:"version"`
 }
 
+// NewCertificate creates and initializes a new Certificate instance.
+func NewCertificate(version string) *Certificate {
+	return &Certificate{
+		Version: version,
+	}
+}
+
 // SetData inserts application data into the certificate after converting it to a hexadecimal string.
 // The `data` parameter is the string data to be stored.
 func (c *Certificate) SetData(data string) {

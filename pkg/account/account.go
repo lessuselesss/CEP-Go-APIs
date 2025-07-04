@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"time"
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	decdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
@@ -36,11 +37,11 @@ type CEPAccount struct {
 }
 
 // NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
-func NewCEPAccount() *CEPAccount {
+func NewCEPAccount(nagURL, chain, version string) *CEPAccount {
 	return &CEPAccount{
-		CodeVersion: "1.0.13",
-		NAGURL:      "https://nag.circularlabs.io/NAG.php?cep=",
-		Blockchain:  "0x8a20baa40c45dc5055aeb26197c203e576ef389d9acb171bd62da11dc5ad72b2",
+		CodeVersion: version,
+		NAGURL:      nagURL,
+		Blockchain:  chain,
 		Nonce:       0,
 		Data:        make(map[string]interface{}),
 		IntervalSec: 2,
@@ -360,39 +361,32 @@ func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{
 // It returns a map[string]interface{} containing the outcome details on success.
 // An error is returned if the NAG_URL is not configured, the network request fails,
 // or the JSON response cannot be parsed.
-func (a *CEPAccount) GetTransactionOutcome(transactionID string) (map[string]interface{}, error) {
-	// The Network Access Gateway URL must be set to know which network to query.
-	if a.NAGURL == "" {
-		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
+func (a *CEPAccount) GetTransactionOutcome(TxID string, timeoutSec int) (map[string]interface{}, error) {
+	startTime := time.Now()
+	timeout := time.Duration(timeoutSec) * time.Second
+
+	for {
+		elapsedTime := time.Since(startTime)
+		if elapsedTime > timeout {
+			return nil, fmt.Errorf("timeout exceeded")
+		}
+
+		data, err := a.GetTransactionByID(TxID)
+		if err != nil {
+			// Continue polling even if there's an error, in case it's a temporary issue
+			fmt.Printf("Error fetching transaction: %v, polling again...\n", err)
+		} else {
+			// Check for a definitive status
+			if result, ok := data["Result"].(float64); ok && result == 200 {
+				if response, ok := data["Response"].(map[string]interface{}); ok {
+					if status, ok := response["Status"].(string); ok && status != "Pending" {
+						return response, nil // Resolve if transaction is found and not pending
+					}
+				}
+			}
+		}
+
+		fmt.Println("Transaction not yet confirmed or not found, polling again...")
+		time.Sleep(time.Duration(a.IntervalSec) * time.Second) // Continue polling
 	}
-
-	// Construct the full API endpoint URL for fetching the transaction outcome.
-	requestURL := fmt.Sprintf("%s/transaction/outcome/%s", a.NAGURL, transactionID)
-
-	// Perform an HTTP GET request to the specified endpoint.
-	resp, err := http.Get(requestURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send get transaction outcome request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	// Check for a successful HTTP response. A non-200 status indicates a problem.
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("network returned an error: %s", resp.Status)
-	}
-
-	// Read the entire body of the HTTP response.
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Unmarshal the JSON response into a map. Using a map allows for flexible handling
-	// of various outcome structures returned by the network.
-	var outcomeDetails map[string]interface{}
-	if err := json.Unmarshal(body, &outcomeDetails); err != nil {
-		return nil, fmt.Errorf("failed to decode transaction outcome: %w", err)
-	}
-
-	return outcomeDetails, nil
 }

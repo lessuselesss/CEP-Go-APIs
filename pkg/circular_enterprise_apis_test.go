@@ -163,3 +163,15 @@ func TestGetNAG(t *testing.T) {
 		}
 	})
 }
+
+func TestCircularOperations(t *testing.T) {
+	// TODO: Implement TestCircularOperations
+}
+
+func TestCertificateOperations(t *testing.T) {
+	// TODO: Implement TestCertificateOperations
+}
+
+func TestHelloWorldCertification(t *testing.T) {
+	// TODO: Implement TestHelloWorldCertification
+}

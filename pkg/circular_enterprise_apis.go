@@ -53,14 +53,14 @@ func NewCEP(nagURL, chain string) *CEP {
 // NewAccount creates a new Account instance, injecting the network configuration
 // held by the parent CEP instance. This ensures the account object is correctly
 // bound to the target network.
-func (c *CEP) NewAccount() *account.Account {
-	return account.NewAccount(c.nagURL, c.chain)
+func (c *CEP) NewAccount() *account.CEPAccount {
+	return account.NewCEPAccount(c.nagURL, c.chain, LibVersion)
 }
 
 // NewCertificate creates a new Certificate instance, injecting the network
 // configuration held by the parent CEP instance.
 func (c *CEP) NewCertificate() *certificate.Certificate {
-	return certificate.NewCertificate(c.nagURL)
+	return certificate.NewCertificate(LibVersion)
 }
 
 // GetNAG is a standalone utility function for discovering the NAG URL for a
