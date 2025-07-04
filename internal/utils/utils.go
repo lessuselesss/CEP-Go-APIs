@@ -28,7 +28,7 @@ func GetFormattedTimestamp() string {
 }
 
 // HexFix removes '0x' prefix from hexadecimal strings if present.
-func hexFix(word string) string {
+func HexFix(word string) string {
 	if strings.HasPrefix(word, "0x") {
 		return word[2:]
 	}
@@ -36,13 +36,13 @@ func hexFix(word string) string {
 }
 
 // StringToHex converts a string to its hexadecimal representation.
-func stringToHex(str string) string {
+func StringToHex(str string) string {
 	return hex.EncodeToString([]byte(str))
 }
 
 // HexToString converts a hexadecimal string back to its original string form.
-func hexToString(hexStr string) string {
-	cleanedHex := hexFix(hexStr)
+func HexToString(hexStr string) string {
+	cleanedHex := HexFix(hexStr)
 	bytes, err := hex.DecodeString(cleanedHex)
 	if err != nil {
 		return ""
