@@ -1,64 +1,41 @@
 package circular_enterprise_apis
 
 import (
+	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-// TestNewCEP tests the factory function for creating CEP instances.
-func TestNewCEP(t *testing.T) {
-	// Test case 1: Using default values for public network
-	t.Run("DefaultInitialization", func(t *testing.T) {
-		cep := NewCEP("", "")
-		if cep.nagURL != DefaultNAG {
-			t.Errorf("Expected default NAG URL %s, but got %s", DefaultNAG, cep.nagURL)
-		}
-		if cep.chain != DefaultChain {
-			t.Errorf("Expected default chain %s, but got %s", DefaultChain, cep.chain)
-		}
-	})
-
-	// Test case 2: Providing custom values for a private network
-	t.Run("CustomInitialization", func(t *testing.T) {
-		customNAG := "http://localhost:8080/nag"
-		customChain := "0xcustomchainhash"
-		cep := NewCEP(customNAG, customChain)
-		if cep.nagURL != customNAG {
-			t.Errorf("Expected custom NAG URL %s, but got %s", customNAG, cep.nagURL)
-		}
-		if cep.chain != customChain {
-			t.Errorf("Expected custom chain %s, but got %s", customChain, cep.chain)
-		}
-	})
-}
 
 // TestNewAccount verifies that the NewAccount method correctly initializes an Account instance
 // with the parent CEP's network configuration.
 func TestNewAccount(t *testing.T) {
-	cep := NewCEP(DefaultNAG, DefaultChain)
-	acc := cep.NewAccount()
+	acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 
 	if acc == nil {
 		t.Fatal("NewAccount returned nil")
 	}
-	// Note: This test relies on the internal structure of the Account object.
-	// To make this more robust, the Account object could expose its configuration via methods.
-	// For now, we assume we can infer state for testing purposes.
+	if acc.NAGURL != DefaultNAG {
+		t.Errorf("Expected NAGURL to be %s, got %s", DefaultNAG, acc.NAGURL)
+	}
 }
 
 // TestNewCertificate verifies that the NewCertificate method correctly initializes a Certificate instance
 // with the parent CEP's network configuration.
 func TestNewCertificate(t *testing.T) {
-	cep := NewCEP(DefaultNAG, DefaultChain)
-	cert := cep.NewCertificate()
+	cert := NewCertificate(LibVersion)
 
 	if cert == nil {
 		t.Fatal("NewCertificate returned nil")
 	}
-	// Similar to TestNewAccount, this test assumes we can validate the initialized object.
+	if cert.Version != LibVersion {
+		t.Errorf("Expected Version to be %s, got %s", LibVersion, cert.Version)
+	}
 }
 
 // mockRoundTripper is a custom http.RoundTripper for mocking HTTP responses in tests.
@@ -164,9 +141,137 @@ func TestGetNAG(t *testing.T) {
 	})
 }
 
-func TestCircularOperations(t *testing.T) {
-	// TODO: Implement TestCircularOperations
+func TestSubmitCertificate(t *testing.T) {
+	testCases := []struct {
+		name           string
+		nagURL         string
+		mockResponse   string
+		mockStatusCode int
+		cert           *Certificate
+		expectError    bool
+		expectedError  string
+		expectedResult map[string]interface{}
+	}{
+		{
+			name:           "Successful Certificate Submission",
+			nagURL:         "http://localhost:8080",
+			mockResponse:   `{"txHash": "0xabc123", "status": "success"}`,
+			mockStatusCode: http.StatusOK,
+			cert: &Certificate{
+				Version: "1.0",
+				Data:    "test data",
+			},
+			expectError:    false,
+			expectedResult: map[string]interface{}{"txHash": "0xabc123", "status": "success"},
+		},
+		{
+			name:           "NAGURL Not Set",
+			nagURL:         "",
+			mockResponse:   "",
+			mockStatusCode: http.StatusOK,
+			cert: &Certificate{
+				Version: "1.0",
+				Data:    "test data",
+			},
+			expectError:   true,
+			expectedError: "network is not set. Please call SetNetwork() first",
+		},
+		{
+			name:           "HTTP Error - Bad Status",
+			nagURL:         "http://localhost:8080",
+			mockResponse:   "Internal Server Error",
+			mockStatusCode: http.StatusInternalServerError,
+			cert: &Certificate{
+				Version: "1.0",
+				Data:    "test data",
+			},
+			expectError:   true,
+			expectedError: "network returned an error - status: 500 Internal Server Error, body: Internal Server Error",
+		},
+		{
+			name:           "Invalid JSON Response",
+			nagURL:         "http://localhost:8080",
+			mockResponse:   `{"txHash": "0xabc123", "status": "success"`, // Malformed JSON
+			mockStatusCode: http.StatusOK,
+			cert: &Certificate{
+				Version: "1.0",
+				Data:    "test data",
+			},
+			expectError:   true,
+			expectedError: "failed to decode response JSON",
+		},
+		{
+			name:           "Empty Certificate Data",
+			nagURL:         "http://localhost:8080",
+			mockResponse:   `{"txHash": "0xabc123", "status": "success"}`,
+			mockStatusCode: http.StatusOK,
+			cert:           &Certificate{}, // Empty certificate
+			expectError:    false,
+			expectedResult: map[string]interface{}{"txHash": "0xabc123", "status": "success"},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			// Create a mock HTTP server if a NAGURL is provided
+			var server *httptest.Server
+			var capturedRequestBody []byte
+			if tc.nagURL != "" {
+				server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					var err error
+					capturedRequestBody, err = io.ReadAll(r.Body)
+					if err != nil {
+						t.Fatalf("Failed to read request body: %v", err)
+					}
+					w.WriteHeader(tc.mockStatusCode)
+					w.Write([]byte(tc.mockResponse))
+				}))
+				defer server.Close()
+			}
+
+			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
+			if tc.nagURL != "" {
+				acc.NAGURL = server.URL
+			} else {
+				acc.NAGURL = tc.nagURL
+			}
+
+			result, err := acc.SubmitCertificate(tc.cert)
+
+			if tc.expectError {
+				if err == nil {
+					t.Errorf("Expected an error but got nil")
+				}
+				if !strings.Contains(err.Error(), tc.expectedError) {
+					t.Errorf("Expected error message to contain '%s', but got '%s'", tc.expectedError, err.Error())
+				}
+			} else {
+				if err != nil {
+					t.Errorf("Expected no error, but got: %v", err)
+				}
+				// Compare the result map
+				if len(result) != len(tc.expectedResult) {
+					t.Errorf("Expected result map length %d, but got %d", len(tc.expectedResult), len(result))
+				}
+				for k, v := range tc.expectedResult {
+					if result[k] != v {
+						t.Errorf("Expected result[%s] to be %v, but got %v", k, v, result[k])
+					}
+				}
+
+				// Verify the request body sent to the mock server
+				expectedRequestBody, marshalErr := json.Marshal(tc.cert)
+				if marshalErr != nil {
+					t.Fatalf("Failed to marshal expected certificate: %v", marshalErr)
+				}
+				if !bytes.Equal(capturedRequestBody, expectedRequestBody) {
+					t.Errorf("Request body mismatch. Expected %s, got %s", string(expectedRequestBody), string(capturedRequestBody))
+				}
+			}
+		})
+	}
 }
+
 
 func TestCertificateOperations(t *testing.T) {
 	// TODO: Implement TestCertificateOperations

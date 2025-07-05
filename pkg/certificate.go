@@ -1,4 +1,4 @@
-package certificate
+package circular_enterprise_apis
 
 import (
 	"encoding/hex"

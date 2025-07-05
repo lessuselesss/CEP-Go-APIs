@@ -1,4 +1,4 @@
-package account
+package circular_enterprise_apis
 
 import (
 	"bytes"
@@ -14,8 +14,6 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	decdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"github.com/lessuselesss/CEP-Go-APIs/internal/utils"
-	. "github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
 )
 
 // CEPAccount holds the data for a Circular Enterprise Protocol account.
@@ -73,8 +71,8 @@ func (a *CEPAccount) UpdateAccount() (bool, error) {
 		Address    string `json:"Address"`
 		Version    string `json:"Version"`
 	}{
-		Blockchain: utils.HexFix(a.Blockchain),
-		Address:    utils.HexFix(a.Address),
+		Blockchain: a.Blockchain,
+		Address:    a.Address,
 		Version:    a.CodeVersion,
 	}
 
@@ -84,7 +82,7 @@ func (a *CEPAccount) UpdateAccount() (bool, error) {
 	}
 
 	// Construct the full URL for the API endpoint
-	url := a.NAGURL + "Circular_GetWalletNonce_" + a.NetworkNode
+	url := fmt.Sprintf("%s/Circular_GetWalletNonce_%s", a.NAGURL, a.NetworkNode)
 
 	// Make the HTTP POST request
 	resp, err := http.Post(url, "application/json", bytes.NewBuffer(jsonData))
@@ -362,6 +360,9 @@ func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{
 // An error is returned if the NAG_URL is not configured, the network request fails,
 // or the JSON response cannot be parsed.
 func (a *CEPAccount) GetTransactionOutcome(TxID string, timeoutSec int) (map[string]interface{}, error) {
+	if a.NAGURL == "" {
+		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
+	}
 	startTime := time.Now()
 	timeout := time.Duration(timeoutSec) * time.Second
 
