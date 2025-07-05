@@ -91,9 +91,111 @@ func TestCircularOperations(t *testing.T) {
 }
 
 func TestCertificateOperations(t *testing.T) {
-	// TODO: Implement TestCertificateOperations
+	privateKeyHex := os.Getenv("CIRCULAR_PRIVATE_KEY")
+	address := os.Getenv("CIRCULAR_ADDRESS")
+	if privateKeyHex == "" || address == "" {
+		t.Skip("Skipping test: CIRCULAR_PRIVATE_KEY and CIRCULAR_ADDRESS environment variables must be set")
+	}
+
+	// Create a mock server to handle network requests
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "GetWalletNonce") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"Result":200,"Response":{"Nonce":1}}`))
+		} else if strings.Contains(r.URL.Path, "Circular_GetTransactionbyID_") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"Result":200,"Response":{"Status":"Confirmed"}}`))
+		} else {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"txHash":"0x12345","status":"success"}`))
+		}
+	}))
+	defer server.Close()
+
+	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
+
+	var err error
+	err = acc.Open(address)
+	if err != nil {
+		t.Fatalf("acc.Open() failed: %v", err)
+	}
+
+	ok, err := acc.UpdateAccount()
+	if !ok || err != nil {
+		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
+	}
+
+	resp, err := acc.SubmitCertificate("test certificate data", privateKeyHex)
+	if err != nil {
+		t.Fatalf("acc.SubmitCertificate() failed: %v", err)
+	}
+
+	txHash, ok := resp["txHash"].(string)
+	if !ok {
+		t.Fatal("txHash not found in response")
+	}
+
+	outcome, err := acc.GetTransactionOutcome(txHash, 10)
+	if err != nil {
+		t.Fatalf("acc.GetTransactionOutcome() failed: %v", err)
+	}
+
+	if status, _ := outcome["Status"].(string); status != "Confirmed" {
+		t.Errorf("Expected transaction status to be 'Confirmed', but got '%s'", status)
+	}
 }
 
 func TestHelloWorldCertification(t *testing.T) {
-	// TODO: Implement TestHelloWorldCertification
+	privateKeyHex := os.Getenv("CIRCULAR_PRIVATE_KEY")
+	address := os.Getenv("CIRCULAR_ADDRESS")
+	if privateKeyHex == "" || address == "" {
+		t.Skip("Skipping test: CIRCULAR_PRIVATE_KEY and CIRCULAR_ADDRESS environment variables must be set")
+	}
+
+	// Create a mock server to handle network requests
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if strings.Contains(r.URL.Path, "GetWalletNonce") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"Result":200,"Response":{"Nonce":1}}`))
+		} else if strings.Contains(r.URL.Path, "Circular_GetTransactionbyID_") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"Result":200,"Response":{"Status":"Confirmed"}}`))
+		} else {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"txHash":"0x12345","status":"success"}`))
+		}
+	}))
+	defer server.Close()
+
+	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
+
+	var err error
+	err = acc.Open(address)
+	if err != nil {
+		t.Fatalf("acc.Open() failed: %v", err)
+	}
+
+	ok, err := acc.UpdateAccount()
+	if !ok || err != nil {
+		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
+	}
+
+	resp, err := acc.SubmitCertificate("Hello World", privateKeyHex)
+	if err != nil {
+		t.Fatalf("acc.SubmitCertificate() failed: %v", err)
+	}
+
+	txHash, ok := resp["txHash"].(string)
+	if !ok {
+		t.Fatal("txHash not found in response")
+	}
+
+	outcome, err := acc.GetTransactionOutcome(txHash, 10)
+	if err != nil {
+		t.Fatalf("acc.GetTransactionOutcome() failed: %v", err)
+	}
+
+	if status, _ := outcome["Status"].(string); status != "Confirmed" {
+		t.Errorf("Expected transaction status to be 'Confirmed', but got '%s'", status)
+	}
 }
