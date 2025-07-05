@@ -1,7 +1,6 @@
 package integration
 
 import (
-	"encoding/hex"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -9,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	"github.com/joho/godotenv"
 	cep "github.com/lessuselesss/CEP-Go-APIs/pkg"
 )
@@ -40,6 +38,9 @@ func TestCircularOperations(t *testing.T) {
 		if strings.Contains(r.URL.Path, "GetWalletNonce") {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"Result":200,"Response":{"Nonce":1}}`))
+		} else if strings.Contains(r.URL.Path, "Circular_GetTransactionbyID_") {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte(`{"Result":200,"Response":{"Status":"Confirmed"}}`))
 		} else if strings.Contains(r.URL.Path, "transaction") {
 			w.WriteHeader(http.StatusOK)
 			w.Write([]byte(`{"Result":200,"Response":{"Status":"Confirmed"}}`))
@@ -53,12 +54,8 @@ func TestCircularOperations(t *testing.T) {
 	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
 
 	// Decode the private key and set it on the account
-	pkBytes, err := hex.DecodeString(privateKeyHex)
-	if err != nil {
-		t.Fatalf("Failed to decode private key: %v", err)
-	}
-	acc.PrivateKey = secp256k1.PrivKeyFromBytes(pkBytes)
 
+	var err error
 	err = acc.Open(address)
 	if err != nil {
 		t.Fatalf("acc.Open() failed: %v", err)
@@ -69,10 +66,8 @@ func TestCircularOperations(t *testing.T) {
 		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
 	}
 
-	cert := cep.NewCertificate(acc.CodeVersion)
-	cert.SetData("test message")
-
-	resp, err := acc.SubmitCertificate(cert)
+	var resp map[string]interface{}
+	resp, err = acc.SubmitCertificate("test message", privateKeyHex)
 	if err != nil {
 		t.Fatalf("acc.SubmitCertificate() failed: %v", err)
 	}
@@ -82,7 +77,8 @@ func TestCircularOperations(t *testing.T) {
 		t.Fatal("txHash not found in response")
 	}
 
-	outcome, err := acc.GetTransactionOutcome(txHash, 10)
+	var outcome map[string]interface{}
+	outcome, err = acc.GetTransactionOutcome(txHash, 10)
 	if err != nil {
 		t.Fatalf("acc.GetTransactionOutcome() failed: %v", err)
 	}

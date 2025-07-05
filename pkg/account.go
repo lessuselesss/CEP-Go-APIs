@@ -12,7 +12,7 @@ import (
 	"net/url"
 	"time"
 
-	"github.com/Circular-Protocol/CEP-Go-APIs/internal/utils"
+	"github.com/lessuselesss/CEP-Go-APIs/internal/utils"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	decdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
@@ -169,7 +169,6 @@ func (a *CEPAccount) SetNetwork(network string) error {
 // needed to prevent sensitive data from lingering in the application's memory.
 func (a *CEPAccount) Close() {
 	// Setting the fields to their zero value effectively clears them.
-	a.PrivateKey = nil
 	a.PublicKey = ""
 	a.Address = ""
 }

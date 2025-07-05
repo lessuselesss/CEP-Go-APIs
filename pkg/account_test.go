@@ -1,6 +1,7 @@
 package circular_enterprise_apis
 
 import (
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -271,39 +272,39 @@ func TestSignData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
+	privateKeyHex := hex.EncodeToString(privateKey.Serialize())
 
 	testCases := []struct {
-		name        string
-		dataToSign  []byte
-		privateKey  *secp256k1.PrivateKey
-		expectError bool
+		name          string
+		dataToSign    []byte
+		privateKeyHex string
+		expectError   bool
 	}{
 		{
-			name:        "Successful Signing",
-			dataToSign:  []byte("test data to be signed"),
-			privateKey:  privateKey,
-			expectError: false,
+			name:          "Successful Signing",
+			dataToSign:    []byte("test data to be signed"),
+			privateKeyHex: privateKeyHex,
+			expectError:   false,
 		},
 		{
-			name:        "No Private Key",
-			dataToSign:  []byte("some data"),
-			privateKey:  nil, // Simulate no private key
-			expectError: true,
+			name:          "Invalid Private Key Hex",
+			dataToSign:    []byte("some data"),
+			privateKeyHex: "invalidhex",
+			expectError:   true,
 		},
 		{
-			name:        "Empty Data",
-			dataToSign:  []byte(""),
-			privateKey:  privateKey,
-			expectError: false, // Signing empty data should still work
+			name:          "Empty Data",
+			dataToSign:    []byte(""),
+			privateKeyHex: privateKeyHex,
+			expectError:   false, // Signing empty data should still work
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
-			acc.PrivateKey = tc.privateKey
 
-			signature, err := acc.SignData(tc.dataToSign)
+			signature, err := acc.SignData(tc.dataToSign, tc.privateKeyHex)
 
 			if tc.expectError {
 				if err == nil {
@@ -330,19 +331,19 @@ func TestSignDataRFC6979(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Failed to generate private key: %v", err)
 	}
+	privateKeyHex := hex.EncodeToString(privateKey.Serialize())
 
 	acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
-	acc.PrivateKey = privateKey
 
 	data := []byte("test message for RFC 6979")
 
 	// Sign the same data twice.
-	sig1, err1 := acc.SignData(data)
+	sig1, err1 := acc.SignData(data, privateKeyHex)
 	if err1 != nil {
 		t.Fatalf("First signature generation failed: %v", err1)
 	}
 
-	sig2, err2 := acc.SignData(data)
+	sig2, err2 := acc.SignData(data, privateKeyHex)
 	if err2 != nil {
 		t.Fatalf("Second signature generation failed: %v", err2)
 	}
@@ -359,11 +360,7 @@ func TestClose(t *testing.T) {
 	acc := NewCEPAccount(DefaultNAG, DefaultChain, LibVersion)
 
 	// Populate fields with dummy values
-	privateKey, err := secp256k1.GeneratePrivateKey()
-	if err != nil {
-		t.Fatalf("Failed to generate private key: %v", err)
-	}
-	acc.PrivateKey = privateKey
+	
 	acc.PublicKey = "testPublicKey"
 	acc.Address = "testAddress"
 
@@ -371,9 +368,6 @@ func TestClose(t *testing.T) {
 	acc.Close()
 
 	// Assert that fields are cleared
-	if acc.PrivateKey != nil {
-		t.Errorf("Expected PrivateKey to be nil, but got %v", acc.PrivateKey)
-	}
 	if acc.PublicKey != "" {
 		t.Errorf("Expected PublicKey to be empty, but got %s", acc.PublicKey)
 	}
@@ -381,10 +375,20 @@ func TestClose(t *testing.T) {
 		t.Errorf("Expected Address to be empty, but got %s", acc.Address)
 	}
 }
-func TestGetTransaction(t *testing.T) {
+
+
+func TestSubmitCertificate(t *testing.T) {
+	// Generate a new private key for testing
+	privateKey, err := secp256k1.GeneratePrivateKey()
+	if err != nil {
+		t.Fatalf("Failed to generate private key: %v", err)
+	}
+	privateKeyHex := hex.EncodeToString(privateKey.Serialize())
+
 	testCases := []struct {
 		name             string
-		transactionHash  string
+		pdata            string
+		privateKey       string
 		mockResponse     string
 		mockStatusCode   int
 		nagURL           string
@@ -393,17 +397,19 @@ func TestGetTransaction(t *testing.T) {
 		expectedResult   map[string]interface{}
 	}{
 		{
-			name:            "Successful GetTransaction",
-			transactionHash: "0xabcdef123456",
-			mockResponse:    `{"status":"success", "details":"transaction details"}`,
+			name:            "Successful Submission",
+			pdata:           "test data",
+			privateKey:      privateKeyHex,
+			mockResponse:    `{"Result":200, "TxID":"0x123"}`,
 			mockStatusCode:  http.StatusOK,
 			nagURL:          "http://localhost:8080",
 			expectError:     false,
-			expectedResult:  map[string]interface{}{"status": "success", "details": "transaction details"},
+			expectedResult:  map[string]interface{}{"Result": float64(200), "TxID": "0x123"},
 		},
 		{
 			name:             "NAGURL Not Set",
-			transactionHash:  "0xabcdef123456",
+			pdata:            "test data",
+			privateKey:       privateKeyHex,
 			mockResponse:     "",
 			mockStatusCode:   0,
 			nagURL:           "",
@@ -411,22 +417,34 @@ func TestGetTransaction(t *testing.T) {
 			expectedErrorMsg: "network is not set. Please call SetNetwork() first",
 		},
 		{
-			name:             "HTTP Error - Non-200 Status",
-			transactionHash:  "0xabcdef123456",
-			mockResponse:     "Not Found",
-			mockStatusCode:   http.StatusNotFound,
+			name:             "Invalid Private Key",
+			pdata:            "test data",
+			privateKey:       "invalid",
+			mockResponse:     "",
+			mockStatusCode:   0,
 			nagURL:           "http://localhost:8080",
 			expectError:      true,
-			expectedErrorMsg: "network returned an error: 404 Not Found",
+			expectedErrorMsg: "failed to sign data: invalid private key hex string",
+		},
+		{
+			name:             "HTTP Error - Non-200 Status",
+			pdata:            "test data",
+			privateKey:       privateKeyHex,
+			mockResponse:     "Internal Server Error",
+			mockStatusCode:   http.StatusInternalServerError,
+			nagURL:           "http://localhost:8080",
+			expectError:      true,
+			expectedErrorMsg: "network returned an error",
 		},
 		{
 			name:             "Invalid JSON Response",
-			transactionHash:  "0xabcdef123456",
-			mockResponse:     `{"status":"success", "details":}`, // Malformed JSON
+			pdata:            "test data",
+			privateKey:       privateKeyHex,
+			mockResponse:     `invalid json`,
 			mockStatusCode:   http.StatusOK,
 			nagURL:           "http://localhost:8080",
 			expectError:      true,
-			expectedErrorMsg: "failed to decode transaction details",
+			expectedErrorMsg: "failed to decode response JSON",
 		},
 	}
 
@@ -448,7 +466,7 @@ func TestGetTransaction(t *testing.T) {
 				acc.NAGURL = ""
 			}
 
-			result, err := acc.GetTransaction(tc.transactionHash)
+			result, err := acc.SubmitCertificate(tc.pdata, tc.privateKey)
 
 			if tc.expectError {
 				if err == nil {
@@ -478,6 +496,8 @@ func TestGetTransactionByID(t *testing.T) {
 	testCases := []struct {
 		name             string
 		transactionID    string
+		startBlock       string
+		endBlock         string
 		mockResponse     string
 		mockStatusCode   int
 		nagURL           string
@@ -488,6 +508,8 @@ func TestGetTransactionByID(t *testing.T) {
 		{
 			name:           "Successful GetTransactionByID",
 			transactionID:  "0xabcdef123456",
+			startBlock:     "",
+			endBlock:       "",
 			mockResponse:   `{"status":"success", "details":"transaction details by ID"}`,
 			mockStatusCode: http.StatusOK,
 			nagURL:         "http://localhost:8080",
@@ -495,8 +517,21 @@ func TestGetTransactionByID(t *testing.T) {
 			expectedResult: map[string]interface{}{"status": "success", "details": "transaction details by ID"},
 		},
 		{
+			name:           "Successful GetTransactionByID with Blocks",
+			transactionID:  "0xabcdef123456",
+			startBlock:     "100",
+			endBlock:       "200",
+			mockResponse:   `{"status":"success", "details":"transaction details by ID and blocks"}`,
+			mockStatusCode: http.StatusOK,
+			nagURL:         "http://localhost:8080",
+			expectError:    false,
+			expectedResult: map[string]interface{}{"status": "success", "details": "transaction details by ID and blocks"},
+		},
+		{
 			name:             "NAGURL Not Set",
 			transactionID:    "0xabcdef123456",
+			startBlock:       "",
+			endBlock:         "",
 			mockResponse:     "",
 			mockStatusCode:   0,
 			nagURL:           "",
@@ -506,15 +541,19 @@ func TestGetTransactionByID(t *testing.T) {
 		{
 			name:             "HTTP Error - Non-200 Status",
 			transactionID:    "0xabcdef123456",
+			startBlock:       "",
+			endBlock:         "",
 			mockResponse:     "Not Found",
 			mockStatusCode:   http.StatusNotFound,
 			nagURL:           "http://localhost:8080",
 			expectError:      true,
-			expectedErrorMsg: "network returned a non-200 status code: 404 Not Found",
+			expectedErrorMsg: "network request failed with status: 404 Not Found",
 		},
 		{
 			name:             "Invalid JSON Response",
 			transactionID:    "0xabcdef123456",
+			startBlock:       "",
+			endBlock:         "",
 			mockResponse:     `{"status":"success", "details":}`, // Malformed JSON
 			mockStatusCode:   http.StatusOK,
 			nagURL:           "http://localhost:8080",
@@ -541,7 +580,7 @@ func TestGetTransactionByID(t *testing.T) {
 				acc.NAGURL = ""
 			}
 
-			result, err := acc.GetTransactionByID(tc.transactionID)
+			result, err := acc.GetTransactionByID(tc.transactionID, tc.startBlock, tc.endBlock)
 
 			if tc.expectError {
 				if err == nil {
@@ -566,6 +605,7 @@ func TestGetTransactionByID(t *testing.T) {
 		})
 	}
 }
+
 
 func TestGetTransactionOutcome(t *testing.T) {
 	testCases := []struct {
