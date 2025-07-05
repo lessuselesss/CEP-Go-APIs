@@ -3,6 +3,8 @@ package circular_enterprise_apis
 import (
 	"io"
 	"net/http"
+
+	"github.com/Circular-Protocol/CEP-Go-APIs/internal/utils"
 )
 
 // Constants define default network parameters and library metadata.

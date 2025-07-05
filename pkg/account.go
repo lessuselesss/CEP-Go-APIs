@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/Circular-Protocol/CEP-Go-APIs/internal/utils"
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	decdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
 )
@@ -31,7 +32,6 @@ type CEPAccount struct {
 	Data        map[string]interface{}
 	IntervalSec int
 	NetworkURL  string
-	PrivateKey  *secp256k1.PrivateKey
 }
 
 // NewCEPAccount is a factory function that creates and initializes a new CEPAccount.
@@ -175,18 +175,26 @@ func (a *CEPAccount) Close() {
 }
 
 // SignData creates a cryptographic signature for the given data using the
-// account's private key. It operates by first hashing the input data with
+// provided private key. It operates by first hashing the input data with
 // SHA-256 and then signing the resulting hash using ECDSA with the secp256k1 curve.
 //
 // The dataToSign parameter is the raw data to be signed.
+// The privateKeyHex parameter is the hex-encoded private key string.
 //
 // It returns the signature as a hex-encoded string in ASN.1 DER format.
-// An error is returned if the private key is not available or if the
+// An error is returned if the private key is invalid or if the
 // signing process fails.
-func (a *CEPAccount) SignData(dataToSign []byte) (string, error) {
-	// A private key must be present in the account to sign data.
-	if a.PrivateKey == nil {
-		return "", fmt.Errorf("private key is not available for signing")
+func (a *CEPAccount) SignData(dataToSign []byte, privateKeyHex string) (string, error) {
+	// Decode the hex-encoded private key string into a byte slice.
+	privateKeyBytes, err := hex.DecodeString(utils.HexFix(privateKeyHex))
+	if err != nil {
+		return "", fmt.Errorf("invalid private key hex string: %w", err)
+	}
+
+	// Parse the private key bytes into a secp256k1.PrivateKey object.
+	privateKey := secp256k1.PrivKeyFromBytes(privateKeyBytes)
+	if privateKey == nil {
+		return "", fmt.Errorf("failed to parse private key from bytes")
 	}
 
 	// Hash the input data using SHA-256. The signing algorithm operates on a
@@ -197,83 +205,58 @@ func (a *CEPAccount) SignData(dataToSign []byte) (string, error) {
 
 	// Sign the hashed data with the private key using the secp256k1 library.
 	// The Sign function from decred/dcrd/dcrec/secp256k1/v4/ecdsa is deterministic by default.
-	signature := decdsa.Sign(a.PrivateKey, hashedData)
+	signature := decdsa.Sign(privateKey, hashedData)
 
 	// The signature is returned as a raw byte slice. We need to serialize it to DER format
 	// for compatibility, as the original function returned ASN.1 DER.
 	return hex.EncodeToString(signature.Serialize()), nil
 }
 
-// GetTransaction retrieves the details of a specific transaction from the blockchain
-// using its unique transaction hash.
-//
-// The transactionHash parameter is the hex-encoded string identifying the transaction.
-//
-// It returns a map[string]interface{} containing the transaction details on success.
-// An error is returned if the NAG_URL is not set, the request fails, or the
-// response cannot be parsed.
-func (a *CEPAccount) GetTransaction(transactionHash string) (map[string]interface{}, error) {
-	// The Network Access Gateway URL must be set to know which network to query.
-	if a.NAGURL == "" {
-		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
-	}
 
-	// Construct the full API endpoint URL for fetching a transaction.
-	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAGURL, transactionHash)
-
-	// Perform the HTTP GET request.
-	resp, err := http.Get(requestURL)
-	if err != nil {
-		return nil, fmt.Errorf("failed to send get transaction request: %w", err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("network returned an error: %s", resp.Status)
-	}
-
-	// Read the response body.
-	body, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response body: %w", err)
-	}
-
-	// Unmarshal the JSON response into a map. Using a map provides flexibility
-	// as the transaction structure may vary.
-	var transactionDetails map[string]interface{}
-	if err := json.Unmarshal(body, &transactionDetails); err != nil {
-		return nil, fmt.Errorf("failed to decode transaction details: %w", err)
-	}
-
-	return transactionDetails, nil
-}
 
 // GetTransactionByID retrieves the details of a specific transaction from the blockchain
-// using its unique transaction ID (often the transaction hash).n//
+// using its unique transaction ID, and optionally a start and end block.
+//
 // The transactionID parameter is the unique string identifying the transaction.
+// The startBlock and endBlock parameters are optional and can be empty strings.
 //
 // On success, it returns a map[string]interface{} containing the transaction
 // details. An error is returned if the NAG_URL is not set, the network request
 // fails, or the response body cannot be properly parsed.
-func (a *CEPAccount) GetTransactionByID(transactionID string) (map[string]interface{}, error) {
+func (a *CEPAccount) GetTransactionByID(transactionID, startBlock, endBlock string) (map[string]interface{}, error) {
 	// A Network Access Gateway URL must be configured to identify the target network.
 	if a.NAGURL == "" {
 		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
 	}
 
-	// Construct the full API endpoint for fetching the transaction by its ID.
-	requestURL := fmt.Sprintf("%s/transaction/%s", a.NAGURL, transactionID)
+	// Prepare the request payload
+	requestData := struct {
+		TxID  string `json:"TxID"`
+		Start string `json:"Start"`
+		End   string `json:"End"`
+	}{
+		TxID:  transactionID,
+		Start: startBlock,
+		End:   endBlock,
+	}
 
-	// Execute the HTTP GET request to the network.
-	resp, err := http.Get(requestURL)
+	jsonData, err := json.Marshal(requestData)
 	if err != nil {
-		return nil, fmt.Errorf("failed to send get transaction request: %w", err)
+		return nil, fmt.Errorf("failed to marshal request data: %w", err)
+	}
+
+	// Construct the full URL for the API endpoint
+	requestURL := fmt.Sprintf("%s/Circular_GetTransactionbyID_%s", a.NAGURL, a.NetworkNode)
+
+	// Make the HTTP POST request
+	resp, err := http.Post(requestURL, "application/json", bytes.NewBuffer(jsonData))
+	if err != nil {
+		return nil, fmt.Errorf("http post request failed: %w", err)
 	}
 	defer resp.Body.Close()
 
-	// Check for a successful HTTP response status.
 	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("network returned a non-200 status code: %s", resp.Status)
+		return nil, fmt.Errorf("network request failed with status: %s", resp.Status)
 	}
 
 	// Read the entire body of the HTTP response.
@@ -296,27 +279,65 @@ func (a *CEPAccount) GetTransactionByID(transactionID string) (map[string]interf
 // and inclusion. It serializes the certificate object into a JSON payload and
 // submits it to the account's configured Network Access Gateway (NAG) URL.
 //
-// The 'cert' parameter is a pointer to the Certificate object to be submitted.
+// The 'pdata' parameter is the raw data to be included in the certificate.
+// The 'privateKey' parameter is the private key used for signing.
 //
 // On success, it returns a map[string]interface{} containing the response from
 // the network, which typically includes a transaction hash. An error is returned
 // if the NAG_URL is not set, if the certificate cannot be serialized, or if the
 // network request fails.
-func (a *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{}, error) {
+func (a *CEPAccount) SubmitCertificate(pdata string, privateKey string) (map[string]interface{}, error) {
 	// A Network Access Gateway URL must be configured to identify the target network.
 	if a.NAGURL == "" {
 		return nil, fmt.Errorf("network is not set. Please call SetNetwork() first")
 	}
 
-	// Marshal the Certificate struct into a JSON byte slice. This is the payload
-	// that will be sent to the network.
-	jsonPayload, err := json.Marshal(cert)
+	// Create the PayloadObject
+	payloadObject := map[string]interface{}{
+		"data": pdata,
+	}
+
+	// Marshal PayloadObject to JSON string
+	payloadObjectBytes, err := json.Marshal(payloadObject)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal certificate to JSON: %w", err)
+		return nil, fmt.Errorf("failed to marshal payload object: %w", err)
+	}
+	payload := hex.EncodeToString(payloadObjectBytes)
+
+	// Generate Timestamp
+	timestamp := utils.GetFormattedTimestamp()
+
+	// Construct the string for hashing
+	str := fmt.Sprintf("%s%s%s%s", a.Address, a.Blockchain, payload, timestamp)
+
+	// Generate ID using SHA-256
+	hasher := sha256.New()
+	hasher.Write([]byte(str))
+	id := hex.EncodeToString(hasher.Sum(nil))
+
+	// Call SignData to get the Signature
+	signature, err := a.SignData([]byte(str), privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("failed to sign data: %w", err)
+	}
+
+	// Construct the final data payload for the HTTP request
+	requestData := map[string]interface{}{
+		"ID":         id,
+		"Address":    a.Address,
+		"Blockchain": a.Blockchain,
+		"Payload":    payload,
+		"Timestamp":  timestamp,
+		"Signature":  signature,
+	}
+
+	jsonData, err := json.Marshal(requestData)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal request data: %w", err)
 	}
 
 	// Create a new HTTP POST request. The body of the request is the JSON payload.
-	req, err := http.NewRequest("POST", a.NAGURL, bytes.NewBuffer(jsonPayload))
+	req, err := http.NewRequest("POST", a.NAGURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
@@ -372,7 +393,7 @@ func (a *CEPAccount) GetTransactionOutcome(TxID string, timeoutSec int) (map[str
 			return nil, fmt.Errorf("timeout exceeded")
 		}
 
-		data, err := a.GetTransactionByID(TxID)
+		data, err := a.GetTransactionByID(TxID, "", "")
 		if err != nil {
 			// Continue polling even if there's an error, in case it's a temporary issue
 			fmt.Printf("Error fetching transaction: %v, polling again...\n", err)
