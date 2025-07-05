@@ -1,4 +1,4 @@
-package account
+package circular_enterprise_apis
 
 import (
 	"net/http"
@@ -9,11 +9,6 @@ import (
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 )
 
-const (
-	DefaultNAG   = "https://nag.circularlabs.io/NAG.php?cep="
-	DefaultChain = "0x8a20baa40c45dc5055aeb26197c203e576ef389d9acb171bd62da11dc5ad72b2"
-	LibVersion   = "1.0.13"
-)
 
 func TestOpen(t *testing.T) {
 	testCases := []struct {

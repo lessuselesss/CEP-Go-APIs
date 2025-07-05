@@ -1,12 +1,8 @@
-package certificate
+package circular_enterprise_apis
 
 import (
-	"bytes"
 	"encoding/hex"
 	"encoding/json"
-	"fmt"
-	"io"
-	"net/http"
 	"reflect"
 	"testing"
 )
@@ -242,47 +238,4 @@ func TestGetCertificateSize(t *testing.T) {
 	}
 }
 
-const (
-	DefaultNAG   = "http://localhost:8080"
-	DefaultChain = "test-chain"
-	LibVersion   = "1.0.0"
-)
 
-// Dummy CEPAccount and NewCEPAccount for testing purposes
-type CEPAccount struct {
-	NAGURL  string
-	Chain   string
-	Version string
-}
-
-func NewCEPAccount(nagURL, chain, version string) *CEPAccount {
-	return &CEPAccount{
-		NAGURL:  nagURL,
-		Chain:   chain,
-		Version: version,
-	}
-}
-
-// Dummy SubmitCertificate method for testing
-func (acc *CEPAccount) SubmitCertificate(cert *Certificate) (map[string]interface{}, error) {
-	if acc.NAGURL == "" {
-		return nil, // Simulate error for missing network
-			fmt.Errorf("network is not set. Please call SetNetwork() first")
-	}
-	// Simulate HTTP request/response for testing
-	reqBody, _ := json.Marshal(cert)
-	resp, err := http.Post(acc.NAGURL, "application/json", bytes.NewReader(reqBody))
-	if err != nil {
-		return nil, err
-	}
-	defer resp.Body.Close()
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("network returned an error - status: %s, body: %s", resp.Status, string(body))
-	}
-	var result map[string]interface{}
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("failed to decode response JSON: %w", err)
-	}
-	return result, nil
-}

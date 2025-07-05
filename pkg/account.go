@@ -1,4 +1,4 @@
-package account
+package circular_enterprise_apis
 
 import (
 	"bytes"
@@ -14,8 +14,6 @@ import (
 
 	"github.com/decred/dcrd/dcrec/secp256k1/v4"
 	decdsa "github.com/decred/dcrd/dcrec/secp256k1/v4/ecdsa"
-	"github.com/lessuselesss/CEP-Go-APIs/internal/utils"
-	. "github.com/lessuselesss/CEP-Go-APIs/pkg/certificate"
 )
 
 // CEPAccount holds the data for a Circular Enterprise Protocol account.
@@ -73,8 +71,8 @@ func (a *CEPAccount) UpdateAccount() (bool, error) {
 		Address    string `json:"Address"`
 		Version    string `json:"Version"`
 	}{
-		Blockchain: utils.HexFix(a.Blockchain),
-		Address:    utils.HexFix(a.Address),
+		Blockchain: a.Blockchain,
+		Address:    a.Address,
 		Version:    a.CodeVersion,
 	}
 

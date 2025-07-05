@@ -1,3 +1,33 @@
+package integration
+
+import (
+	"encoding/hex"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"os"
+	"strings"
+	"testing"
+
+	"github.com/decred/dcrd/dcrec/secp256k1/v4"
+	"github.com/joho/godotenv"
+	cep "github.com/lessuselesss/CEP-Go-APIs/pkg"
+)
+
+func TestMain(m *testing.M) {
+	// Load .env file from the current directory (tests/integration)
+	// This makes the environment variables available to the tests
+	err := godotenv.Load()
+	if err != nil {
+		// If the .env file is not found, we don't fail the test,
+		// as the tests are designed to skip if the env vars are not set.
+		// We just log that it wasn't loaded.
+		fmt.Println("Error loading .env file, tests requiring env vars will be skipped.")
+	}
+	// Run the tests
+	os.Exit(m.Run())
+}
+
 func TestCircularOperations(t *testing.T) {
 	privateKeyHex := os.Getenv("CIRCULAR_PRIVATE_KEY")
 	address := os.Getenv("CIRCULAR_ADDRESS")
@@ -20,7 +50,7 @@ func TestCircularOperations(t *testing.T) {
 	}))
 	defer server.Close()
 
-	acc := account.NewCEPAccount(server.URL, "testnet", "1.0")
+	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
 
 	// Decode the private key and set it on the account
 	pkBytes, err := hex.DecodeString(privateKeyHex)
@@ -39,7 +69,7 @@ func TestCircularOperations(t *testing.T) {
 		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
 	}
 
-	cert := certificate.NewCertificate(acc.Blockchain, acc.CodeVersion)
+	cert := cep.NewCertificate(acc.CodeVersion)
 	cert.SetData("test message")
 
 	resp, err := acc.SubmitCertificate(cert)
