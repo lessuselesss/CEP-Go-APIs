@@ -165,7 +165,10 @@ func TestStringToHex(t *testing.T) {
 
 func TestHexToString(t *testing.T) {
 	t.Run("valid hex string", func(t *testing.T) {
-		result := HexToString("68656c6c6f")
+		result, err := HexToString("68656c6c6f")
+		if err != nil {
+			t.Fatalf("HexToString returned an unexpected error: %v", err)
+		}
 		expected := "hello"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -173,7 +176,10 @@ func TestHexToString(t *testing.T) {
 	})
 
 		t.Run("with 0x prefix", func(t *testing.T) {
-		result := HexToString("0x68656c6c6f")
+		result, err := HexToString("0x68656c6c6f")
+		if err != nil {
+			t.Fatalf("HexToString returned an unexpected error: %v", err)
+		}
 		expected := "hello"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -181,7 +187,10 @@ func TestHexToString(t *testing.T) {
 	})
 
 		t.Run("empty string", func(t *testing.T) {
-		result := HexToString("")
+		result, err := HexToString("")
+		if err != nil {
+			t.Fatalf("HexToString returned an unexpected error: %v", err)
+		}
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -189,7 +198,10 @@ func TestHexToString(t *testing.T) {
 	})
 
 		t.Run("invalid hex string", func(t *testing.T) {
-		result := HexToString("invalid")
+		result, err := HexToString("invalid")
+		if err == nil {
+			t.Fatalf("Expected an error for invalid hex string, but got none")
+		}
 		expected := ""
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)
@@ -197,7 +209,10 @@ func TestHexToString(t *testing.T) {
 	})
 
 		t.Run("with null byte", func(t *testing.T) {
-		result := HexToString("68656c006c6f")
+		result, err := HexToString("68656c006c6f")
+		if err != nil {
+			t.Fatalf("HexToString returned an unexpected error: %v", err)
+		}
 		expected := "hello"
 		if result != expected {
 			t.Errorf("Expected %s, but got %s", expected, result)

@@ -32,7 +32,7 @@ func TestSetData(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			cert := &Certificate{}
+			cert := &CCertificate{}
 			cert.SetData(tc.data)
 
 			expectedHex := hex.EncodeToString([]byte(tc.data))
@@ -47,13 +47,13 @@ func TestSetData(t *testing.T) {
 func TestGetData(t *testing.T) {
 	testCases := []struct {
 		name         string
-		cert         Certificate
+		cert         CCertificate
 		expectedData string
 		expectError  bool
 	}{
 		{
 			name: "Simple ASCII string",
-			cert: Certificate{
+			cert: CCertificate{
 				Data: hex.EncodeToString([]byte("hello world")),
 			},
 			expectedData: "hello world",
@@ -61,7 +61,7 @@ func TestGetData(t *testing.T) {
 		},
 		{
 			name: "Unicode string",
-			cert: Certificate{
+			cert: CCertificate{
 				Data: hex.EncodeToString([]byte("你好, 世界")),
 			},
 			expectedData: "你好, 世界",
@@ -69,7 +69,7 @@ func TestGetData(t *testing.T) {
 		},
 		{
 			name: "Empty string",
-			cert: Certificate{
+			cert: CCertificate{
 				Data: "",
 			},
 			expectedData: "",
@@ -77,7 +77,7 @@ func TestGetData(t *testing.T) {
 		},
 		{
 			name: "Invalid hex data",
-			cert: Certificate{
+			cert: CCertificate{
 				Data: "this is not hex",
 			},
 			expectedData: "",
@@ -85,7 +85,7 @@ func TestGetData(t *testing.T) {
 		},
 		{
 			name: "Odd length hex string",
-			cert: Certificate{
+			cert: CCertificate{
 				Data: "123",
 			},
 			expectedData: "",
@@ -103,7 +103,7 @@ func TestGetData(t *testing.T) {
 				}
 			} else {
 				if err != nil {
-					t.Errorf("Did not expect an error, but got: %v", err)
+					t.Errorf("Did not expect an error, but got: %s", err)
 				}
 				if data != tc.expectedData {
 					t.Errorf("Expected data to be '%s', but got '%s'", tc.expectedData, data)
@@ -116,13 +116,13 @@ func TestGetData(t *testing.T) {
 func TestGetJSONCertificate(t *testing.T) {
 	testCases := []struct {
 		name         string
-		cert         Certificate
+		cert         CCertificate
 		expectedJSON string
 		expectError  bool
 	}{
 		{
 			name: "Full certificate",
-			cert: Certificate{
+			cert: CCertificate{
 				Data:          hex.EncodeToString([]byte("hello world")),
 				PreviousTxID:  "txid123",
 				PreviousBlock: "block456",
@@ -133,13 +133,13 @@ func TestGetJSONCertificate(t *testing.T) {
 		},
 		{
 			name:         "Empty certificate",
-			cert:         Certificate{},
+			cert:         CCertificate{},
 			expectedJSON: `{"data":"","previousTxID":"","previousBlock":"","version":""}`,
 			expectError:  false,
 		},
 		{
 			name: "Certificate with some empty fields",
-			cert: Certificate{
+			cert: CCertificate{
 				Data:    hex.EncodeToString([]byte("some data")),
 				Version: "1.1.0",
 			},
@@ -160,7 +160,7 @@ func TestGetJSONCertificate(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Errorf("Did not expect an error, but got: %v", err)
+				t.Errorf("Did not expect an error, but got: %s", err)
 			}
 
 			var resultData, expectedData map[string]interface{}
@@ -185,13 +185,13 @@ func TestGetJSONCertificate(t *testing.T) {
 func TestGetCertificateSize(t *testing.T) {
 	testCases := []struct {
 		name         string
-		cert         Certificate
+		cert         CCertificate
 		expectedSize int
 		expectError  bool
 	}{
 		{
 			name: "Full certificate",
-			cert: Certificate{
+			cert: CCertificate{
 				Data:          hex.EncodeToString([]byte("hello world")),
 				PreviousTxID:  "txid123",
 				PreviousBlock: "block456",
@@ -202,13 +202,13 @@ func TestGetCertificateSize(t *testing.T) {
 		},
 		{
 			name:         "Empty certificate",
-			cert:         Certificate{},
+			cert:         CCertificate{},
 			expectedSize: 61,
 			expectError:  false,
 		},
 		{
 			name: "Certificate with unicode data",
-			cert: Certificate{
+			cert: CCertificate{
 				Data: hex.EncodeToString([]byte("你好, 世界")),
 			},
 			expectedSize: 89,
@@ -228,7 +228,7 @@ func TestGetCertificateSize(t *testing.T) {
 			}
 
 			if err != nil {
-				t.Errorf("Did not expect an error, but got: %v", err)
+				t.Errorf("Did not expect an error, but got: %s", err)
 			}
 
 			if size != tc.expectedSize {

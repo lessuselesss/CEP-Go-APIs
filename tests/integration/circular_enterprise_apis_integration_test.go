@@ -9,7 +9,7 @@ import (
 	"testing"
 
 	"github.com/joho/godotenv"
-	cep "github.com/lessuselesss/CEP-Go-APIs/pkg"
+	cep "github.com/circular-protocol/go-enterprise-apis/pkg"
 )
 
 func TestMain(m *testing.M) {
@@ -51,39 +51,33 @@ func TestCircularOperations(t *testing.T) {
 	}))
 	defer server.Close()
 
-	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
+	acc := cep.NewCEPAccount()
 
 	// Decode the private key and set it on the account
 
-	var err error
-	err = acc.Open(address)
-	if err != nil {
+	if err := acc.Open(address); err != nil {
 		t.Fatalf("acc.Open() failed: %v", err)
 	}
 
-	ok, err := acc.UpdateAccount()
-	if !ok || err != nil {
-		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
+	if err := acc.UpdateAccount(); err != nil {
+		t.Fatalf("acc.UpdateAccount() failed: %v", err)
 	}
 
-	var resp map[string]interface{}
-	resp, err = acc.SubmitCertificate("test message", privateKeyHex)
-	if err != nil {
+	if err := acc.SubmitCertificate("test message", privateKeyHex); err != nil {
 		t.Fatalf("acc.SubmitCertificate() failed: %v", err)
 	}
 
-	txHash, ok := resp["txHash"].(string)
-	if !ok {
+	txHash := acc.LatestTxID
+	if txHash == "" {
 		t.Fatal("txHash not found in response")
 	}
 
-	var outcome map[string]interface{}
-	outcome, err = acc.GetTransactionOutcome(txHash, 10)
+	outcome, err := acc.GetTransactionOutcome(txHash, 10, acc.IntervalSec)
 	if err != nil {
 		t.Fatalf("acc.GetTransactionOutcome() failed: %v", err)
 	}
 
-	if status, _ := outcome["Status"].(string); status != "Confirmed" {
+	if status, ok := outcome["Status"].(string); !ok || status != "Confirmed" {
 		t.Errorf("Expected transaction status to be 'Confirmed', but got '%s'", status)
 	}
 
@@ -112,35 +106,31 @@ func TestCertificateOperations(t *testing.T) {
 	}))
 	defer server.Close()
 
-	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
+	acc := cep.NewCEPAccount()
 
-	var err error
-	err = acc.Open(address)
-	if err != nil {
+	if err := acc.Open(address); err != nil {
 		t.Fatalf("acc.Open() failed: %v", err)
 	}
 
-	ok, err := acc.UpdateAccount()
-	if !ok || err != nil {
-		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
+	if err := acc.UpdateAccount(); err != nil {
+		t.Fatalf("acc.UpdateAccount() failed: %v", err)
 	}
 
-	resp, err := acc.SubmitCertificate("test certificate data", privateKeyHex)
-	if err != nil {
+	if err := acc.SubmitCertificate("test certificate data", privateKeyHex); err != nil {
 		t.Fatalf("acc.SubmitCertificate() failed: %v", err)
 	}
 
-	txHash, ok := resp["txHash"].(string)
-	if !ok {
+	txHash := acc.LatestTxID
+	if txHash == "" {
 		t.Fatal("txHash not found in response")
 	}
 
-	outcome, err := acc.GetTransactionOutcome(txHash, 10)
+	outcome, err := acc.GetTransactionOutcome(txHash, 10, acc.IntervalSec)
 	if err != nil {
 		t.Fatalf("acc.GetTransactionOutcome() failed: %v", err)
 	}
 
-	if status, _ := outcome["Status"].(string); status != "Confirmed" {
+	if status, ok := outcome["Status"].(string); !ok || status != "Confirmed" {
 		t.Errorf("Expected transaction status to be 'Confirmed', but got '%s'", status)
 	}
 }
@@ -167,35 +157,31 @@ func TestHelloWorldCertification(t *testing.T) {
 	}))
 	defer server.Close()
 
-	acc := cep.NewCEPAccount(server.URL, "testnet", "1.0")
+	acc := cep.NewCEPAccount()
 
-	var err error
-	err = acc.Open(address)
-	if err != nil {
+	if err := acc.Open(address); err != nil {
 		t.Fatalf("acc.Open() failed: %v", err)
 	}
 
-	ok, err := acc.UpdateAccount()
-	if !ok || err != nil {
-		t.Fatalf("acc.UpdateAccount() failed: ok=%v, err=%v", ok, err)
+	if err := acc.UpdateAccount(); err != nil {
+		t.Fatalf("acc.UpdateAccount() failed: %v", err)
 	}
 
-	resp, err := acc.SubmitCertificate("Hello World", privateKeyHex)
-	if err != nil {
+	if err := acc.SubmitCertificate("Hello World", privateKeyHex); err != nil {
 		t.Fatalf("acc.SubmitCertificate() failed: %v", err)
 	}
 
-	txHash, ok := resp["txHash"].(string)
-	if !ok {
+	txHash := acc.LatestTxID
+	if txHash == "" {
 		t.Fatal("txHash not found in response")
 	}
 
-	outcome, err := acc.GetTransactionOutcome(txHash, 10)
+	outcome, err := acc.GetTransactionOutcome(txHash, 10, acc.IntervalSec)
 	if err != nil {
 		t.Fatalf("acc.GetTransactionOutcome() failed: %v", err)
 	}
 
-	if status, _ := outcome["Status"].(string); status != "Confirmed" {
+	if status, ok := outcome["Status"].(string); !ok || status != "Confirmed" {
 		t.Errorf("Expected transaction status to be 'Confirmed', but got '%s'", status)
 	}
 }
